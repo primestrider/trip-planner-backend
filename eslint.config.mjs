@@ -8,9 +8,12 @@ export default tseslint.config(
   {
     ignores: ['eslint.config.mjs'],
   },
+
+  // 1️⃣ Base rules
   eslint.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
-  eslintPluginPrettierRecommended,
+
+  // 2️⃣ Language options
   {
     languageOptions: {
       globals: {
@@ -24,11 +27,14 @@ export default tseslint.config(
       },
     },
   },
+
   {
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-floating-promises': 'warn',
-      '@typescript-eslint/no-unsafe-argument': 'warn'
+      '@typescript-eslint/no-unsafe-argument': 'warn',
     },
   },
+
+  eslintPluginPrettierRecommended,
 );
