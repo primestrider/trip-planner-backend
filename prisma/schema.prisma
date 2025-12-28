@@ -29,17 +29,23 @@ model User {
 }
 
 model UserAccessToken {
-  id        String @id @default(uuid())
-  tokenHash String
+  id String @id @default(uuid())
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  expiresAt DateTime  @db.Timestamp(0)
+  deviceId String // 
+
+  tokenHash String
+  expiresAt DateTime @db.Timestamp(0)
+
+  // optional, keep if you want soft revoke
   revokedAt DateTime? @db.Timestamp(0)
 
   createdAt DateTime @default(now()) @db.Timestamp(0)
 
   @@index([userId])
+  @@index([userId, deviceId])
+  @@index([expiresAt])
   @@map("user_access_tokens")
 }

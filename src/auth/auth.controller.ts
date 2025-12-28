@@ -1,9 +1,15 @@
 import { Body, Controller, HttpCode, HttpStatus, Post } from "@nestjs/common";
 import { AuthService } from "./auth.service";
 import { ValidationPipe } from "src/common/validation/validation.pipe";
-import { type RegisterUserDto, RegisterSchema } from "./auth.validation";
+import {
+  type RegisterUserDto,
+  type LoginUserDto,
+  LoginSchema,
+  RegisterSchema
+} from "./auth.validation";
 import { BaseResponse } from "src/common/models";
-import { RegisterUserResponse } from "./models";
+import { AuthUserResponse } from "./models";
+import { CurrentDevice } from "src/common/decorator/device.decorator";
 
 @Controller("authentication")
 export class AuthController {
@@ -17,10 +23,25 @@ export class AuthController {
   @Post("register")
   @HttpCode(HttpStatus.CREATED)
   async register(
-    @Body(ValidationPipe(RegisterSchema)) body: RegisterUserDto
-  ): Promise<BaseResponse<RegisterUserResponse>> {
-    const result = await this.authService.register(body);
+    @Body(ValidationPipe(RegisterSchema)) body: RegisterUserDto,
+    @CurrentDevice() deviceId: string
+  ): Promise<BaseResponse<AuthUserResponse>> {
+    const result = await this.authService.register({ ...body, deviceId });
+    return {
+      data: result
+    };
+  }
 
+  /**
+   * Login as a user
+   *  POST /authentication/login
+   */
+  @Post("login")
+  async login(
+    @Body(ValidationPipe(LoginSchema)) body: LoginUserDto,
+    @CurrentDevice() deviceId: string
+  ): Promise<BaseResponse<AuthUserResponse>> {
+    const result = await this.authService.login({ ...body, deviceId });
     return {
       data: result
     };
