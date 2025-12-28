@@ -21,4 +21,11 @@ export const RegisterSchema = z
     message: "Passwords do not match"
   });
 
+export const LoginSchema = z.object({
+  username: z.string().min(1),
+
+  password: z.string().min(1)
+});
+
 export type RegisterUserDto = z.infer<typeof RegisterSchema>;
+export type LoginUserDto = z.infer<typeof LoginSchema>;

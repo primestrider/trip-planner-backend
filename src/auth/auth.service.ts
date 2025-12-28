@@ -2,17 +2,23 @@ import {
   ConflictException,
   Injectable,
   InternalServerErrorException,
-  Inject
+  Inject,
+  UnauthorizedException
 } from "@nestjs/common";
 import { WINSTON_MODULE_PROVIDER } from "nest-winston";
 import { Logger } from "winston";
 import * as bcrypt from "bcrypt";
-import { type RegisterUserDto } from "./auth.validation";
 import { UsersService } from "../users/users.service";
 import { JwtService, JwtSignOptions } from "@nestjs/jwt";
 import { ConfigService } from "@nestjs/config";
 import { AuthRepository } from "./auth.repository";
-import { AccessTokenPayload, RegisterUserResponse } from "./models";
+
+import {
+  AccessTokenPayload,
+  AuthUserResponse,
+  LoginContext,
+  RegisterContext
+} from "./models";
 import { parseDuration } from "src/utils/parser";
 
 @Injectable()
@@ -26,16 +32,119 @@ export class AuthService {
     private readonly logger: Logger
   ) {}
 
-  private signJwt(
-    payload: AccessTokenPayload,
-    options: JwtSignOptions
-  ): Promise<string> {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-    return this.jwtService.signAsync(payload, options);
+  /**
+   * Load and validate JWT configuration from environment variables.
+   *
+   * @returns Object containing JWT secrets and expiration durations in milliseconds
+   * @throws {InternalServerErrorException} If configuration is missing or invalid
+   */
+  private getJwtConfig(): {
+    accessSecret: string;
+    refreshSecret: string;
+    accessExpiresMs: number;
+    refreshExpiresMs: number;
+  } {
+    const accessSecret = this.configService.get<string>("JWT_ACCESS_SECRET");
+    const refreshSecret = this.configService.get<string>("JWT_REFRESH_SECRET");
+    const accessExpiresIn = this.configService.get<string>(
+      "JWT_ACCESS_EXPIRES_IN"
+    );
+    const refreshExpiresIn = this.configService.get<string>(
+      "JWT_REFRESH_EXPIRES_IN"
+    );
+
+    if (
+      !accessSecret ||
+      !refreshSecret ||
+      !accessExpiresIn ||
+      !refreshExpiresIn
+    ) {
+      throw new InternalServerErrorException("JWT configuration is missing");
+    }
+
+    const accessExpiresMs = parseDuration(accessExpiresIn);
+    const refreshExpiresMs = parseDuration(refreshExpiresIn);
+
+    if (
+      typeof accessExpiresMs !== "number" ||
+      typeof refreshExpiresMs !== "number"
+    ) {
+      throw new InternalServerErrorException("Invalid JWT expiration format");
+    }
+
+    return {
+      accessSecret,
+      refreshSecret,
+      accessExpiresMs,
+      refreshExpiresMs
+    };
   }
 
-  async register(request: RegisterUserDto): Promise<RegisterUserResponse> {
-    const { username, password } = request;
+  /**
+   * Sign a JWT using the given payload and signing options.
+   *
+   * @param payload Data to be embedded inside the JWT
+   * @param options JWT signing options (secret, expiration, etc.)
+   * @returns Signed JWT string
+   */
+  private async signJwt<T extends object>(
+    payload: T,
+    options: JwtSignOptions
+  ): Promise<string> {
+    return await this.jwtService.signAsync(payload, options);
+  }
+
+  /**
+   * Generate a short-lived access token for authenticated API requests.
+   *
+   * @param payload JWT payload containing user identity
+   * @returns Signed access token
+   */
+  private async generateAccessToken(
+    payload: AccessTokenPayload
+  ): Promise<string> {
+    const { accessSecret, accessExpiresMs } = this.getJwtConfig();
+
+    return this.signJwt(payload, {
+      secret: accessSecret,
+      expiresIn: Math.floor(accessExpiresMs / 1000)
+    });
+  }
+
+  /**
+   * Generate a long-lived refresh token and its expiration timestamp.
+   *
+   * @param payload JWT payload containing user identity
+   * @returns Object containing refresh token and expiration date
+   */
+  private async generateRefreshToken(payload: AccessTokenPayload): Promise<{
+    token: string;
+    expiresAt: Date;
+  }> {
+    const { refreshSecret, refreshExpiresMs } = this.getJwtConfig();
+
+    const token = await this.signJwt(payload, {
+      secret: refreshSecret,
+      expiresIn: Math.floor(refreshExpiresMs / 1000)
+    });
+
+    return {
+      token,
+      expiresAt: new Date(Date.now() + refreshExpiresMs)
+    };
+  }
+
+  /**
+   * Register a new user and issue access & refresh tokens.
+   *
+   * @param request User registration payload (username and password)
+   * @returns Registered user data along with access and refresh tokens
+   * @throws {ConflictException} If username already exists
+   * @throws {InternalServerErrorException} If registration process fails
+   * @returns {AuthUserResponse}
+   */
+  async register(request: RegisterContext): Promise<AuthUserResponse> {
+    const { username, password, deviceId } = request;
 
     this.logger.info("Register user requested", { username });
 
@@ -54,51 +163,16 @@ export class AuthService {
         username: user.username
       };
 
-      const accessSecret = this.configService.get<string>("JWT_ACCESS_SECRET");
-      const refreshSecret =
-        this.configService.get<string>("JWT_REFRESH_SECRET");
-      const accessExpiresIn = this.configService.get<string>(
-        "JWT_ACCESS_EXPIRES_IN"
-      );
-      const refreshExpiresIn = this.configService.get<string>(
-        "JWT_REFRESH_EXPIRES_IN"
-      );
+      const accessToken = await this.generateAccessToken(payload);
 
-      if (
-        !accessSecret ||
-        !refreshSecret ||
-        !accessExpiresIn ||
-        !refreshExpiresIn
-      ) {
-        throw new InternalServerErrorException("JWT configuration is missing");
-      }
-
-      const accessExpiresMs = parseDuration(accessExpiresIn);
-      const refreshExpiresMs = parseDuration(refreshExpiresIn);
-
-      if (
-        typeof accessExpiresMs !== "number" ||
-        typeof refreshExpiresMs !== "number"
-      ) {
-        throw new InternalServerErrorException("Invalid JWT expiration format");
-      }
-
-      const accessToken = await this.signJwt(payload, {
-        secret: accessSecret,
-        expiresIn: Math.floor(accessExpiresMs / 1000)
-      });
-
-      const refreshToken = await this.signJwt(payload, {
-        secret: refreshSecret,
-        expiresIn: Math.floor(refreshExpiresMs / 1000)
-      });
+      const { token: refreshToken, expiresAt: refreshExpiresAt } =
+        await this.generateRefreshToken(payload);
 
       const refreshTokenHash = await bcrypt.hash(refreshToken, 10);
 
-      const refreshExpiresAt = new Date(Date.now() + refreshExpiresMs);
-
       await this.authRepository.create({
         userId: user.id,
+        deviceId: deviceId,
         tokenHash: refreshTokenHash,
         expiresAt: refreshExpiresAt
       });
@@ -115,7 +189,7 @@ export class AuthService {
         },
         accessToken,
         refreshToken
-      } as RegisterUserResponse;
+      };
     } catch (error: unknown) {
       if (error instanceof ConflictException) {
         this.logger.warn("User registration conflict", { username });
@@ -132,5 +206,50 @@ export class AuthService {
 
       throw new InternalServerErrorException("Failed to register user");
     }
+  }
+
+  /**
+   * Login as a user and issue new access & refresh token
+   * @param request LoginContext (username and password)
+   * @throws {UnauthorizedException} if username or password invalid
+
+  **/
+  async login(request: LoginContext): Promise<AuthUserResponse> {
+    const { username, password, deviceId } = request;
+
+    const user = await this.usersService.findByUsername(username);
+    if (!user) {
+      throw new UnauthorizedException("Invalid username or password");
+    }
+
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      throw new UnauthorizedException("Invalid username or password");
+    }
+
+    const payload: AccessTokenPayload = {
+      sub: user.id,
+      username: user.username
+    };
+
+    const accessToken = await this.generateAccessToken(payload);
+    const { token: refreshToken, expiresAt } =
+      await this.generateRefreshToken(payload);
+
+    // for overwrite token for same device
+    await this.authRepository.deleteByUserAndDevice(user.id, deviceId);
+
+    await this.authRepository.create({
+      userId: user.id,
+      deviceId: deviceId,
+      tokenHash: await bcrypt.hash(refreshToken, 10),
+      expiresAt
+    });
+
+    return {
+      user: { id: user.id, username: user.username },
+      accessToken,
+      refreshToken
+    };
   }
 }

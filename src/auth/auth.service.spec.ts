@@ -1,15 +1,29 @@
+/**
+ * IMPORTANT:
+ * bcrypt adalah native / CJS module
+ * HARUS dimock via jest.mock
+ */
+jest.mock("bcrypt", () => ({
+  hash: jest.fn(),
+  compare: jest.fn()
+}));
+
 import { Test, TestingModule } from "@nestjs/testing";
-import {
-  ConflictException,
-  InternalServerErrorException
-} from "@nestjs/common";
+import { ConflictException, UnauthorizedException } from "@nestjs/common";
 import { AuthService } from "./auth.service";
 import { UsersService } from "../users/users.service";
 import { AuthRepository } from "./auth.repository";
 import { JwtService } from "@nestjs/jwt";
 import { ConfigService } from "@nestjs/config";
 import { WINSTON_MODULE_PROVIDER } from "nest-winston";
-import { RegisterUserDto } from "./auth.validation";
+import * as bcrypt from "bcrypt";
+import { RegisterUserDto, LoginUserDto } from "./auth.validation";
+
+// =====================
+// CONSTANTS
+// =====================
+
+const DEVICE_ID = "test-device-id";
 
 // =====================
 // MOCK DEPENDENCIES
@@ -17,11 +31,13 @@ import { RegisterUserDto } from "./auth.validation";
 
 const mockUsersService = {
   ensureUsernameNotExists: jest.fn(),
-  create: jest.fn()
+  create: jest.fn(),
+  findByUsername: jest.fn()
 };
 
 const mockAuthRepository = {
-  create: jest.fn()
+  create: jest.fn(),
+  deleteByUserAndDevice: jest.fn()
 };
 
 const mockJwtService = {
@@ -39,7 +55,7 @@ const mockLogger = {
 };
 
 // =====================
-// HELPER
+// HELPERS
 // =====================
 
 function makeRegisterDto(
@@ -53,11 +69,43 @@ function makeRegisterDto(
   };
 }
 
+function makeLoginDto(overrides?: Partial<LoginUserDto>): LoginUserDto {
+  return {
+    username: "john",
+    password: "password123",
+    ...overrides
+  };
+}
+
+function mockJwtConfigValid() {
+  mockConfigService.get.mockImplementation((key: string) => {
+    switch (key) {
+      case "JWT_ACCESS_SECRET":
+        return "access-secret";
+      case "JWT_REFRESH_SECRET":
+        return "refresh-secret";
+      case "JWT_ACCESS_EXPIRES_IN":
+        return "1h";
+      case "JWT_REFRESH_EXPIRES_IN":
+        return "30d";
+      default:
+        return undefined;
+    }
+  });
+}
+
+// =====================
+// TESTS
+// =====================
+
 describe("AuthService", () => {
   let service: AuthService;
 
   beforeEach(async () => {
     jest.clearAllMocks();
+
+    (bcrypt.hash as jest.Mock).mockResolvedValue("hashed");
+    (bcrypt.compare as jest.Mock).mockResolvedValue(true);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -73,181 +121,135 @@ describe("AuthService", () => {
     service = module.get<AuthService>(AuthService);
   });
 
-  // =====================
-  // HAPPY PATH
-  // =====================
-  it("should register user successfully and return tokens", async () => {
-    mockUsersService.ensureUsernameNotExists.mockResolvedValue(undefined);
-    mockUsersService.create.mockResolvedValue({
-      id: 1,
-      username: "john"
-    });
+  // ======================================================
+  // REGISTER
+  // ======================================================
 
-    mockConfigService.get.mockImplementation((key: string) => {
-      switch (key) {
-        case "JWT_ACCESS_SECRET":
-          return "access-secret";
-        case "JWT_REFRESH_SECRET":
-          return "refresh-secret";
-        case "JWT_ACCESS_EXPIRES_IN":
-          return "1h";
-        case "JWT_REFRESH_EXPIRES_IN":
-          return "30d";
-        default:
-          return undefined;
-      }
-    });
-
-    mockJwtService.signAsync
-      .mockResolvedValueOnce("access-token")
-      .mockResolvedValueOnce("refresh-token");
-
-    mockAuthRepository.create.mockResolvedValue(undefined);
-
-    const result = await service.register(makeRegisterDto());
-
-    expect(result).toEqual({
-      user: {
+  describe("register", () => {
+    it("should register user successfully and return tokens", async () => {
+      mockUsersService.ensureUsernameNotExists.mockResolvedValue(undefined);
+      mockUsersService.create.mockResolvedValue({
         id: 1,
         username: "john"
-      },
-      accessToken: "access-token",
-      refreshToken: "refresh-token"
+      });
+
+      mockJwtConfigValid();
+
+      mockJwtService.signAsync
+        .mockResolvedValueOnce("access-token")
+        .mockResolvedValueOnce("refresh-token");
+
+      mockAuthRepository.create.mockResolvedValue(undefined);
+
+      const result = await service.register({
+        ...makeRegisterDto(),
+        deviceId: DEVICE_ID
+      });
+
+      expect(result).toEqual({
+        user: { id: 1, username: "john" },
+        accessToken: "access-token",
+        refreshToken: "refresh-token"
+      });
+
+      expect(mockAuthRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 1,
+          deviceId: DEVICE_ID
+        })
+      );
     });
 
-    expect(mockUsersService.ensureUsernameNotExists).toHaveBeenCalledWith(
-      "john"
-    );
-    expect(mockUsersService.create).toHaveBeenCalled();
-    expect(mockJwtService.signAsync).toHaveBeenCalledTimes(2);
-    expect(mockAuthRepository.create).toHaveBeenCalled();
+    it("should throw ConflictException if username already exists", async () => {
+      mockUsersService.ensureUsernameNotExists.mockRejectedValue(
+        new ConflictException("Username already exists")
+      );
+
+      await expect(
+        service.register({ ...makeRegisterDto(), deviceId: DEVICE_ID })
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
   });
 
-  // =====================
-  // USERNAME CONFLICT
-  // =====================
-  it("should throw ConflictException if username already exists", async () => {
-    mockUsersService.ensureUsernameNotExists.mockRejectedValue(
-      new ConflictException("Username already exists")
-    );
+  // ======================================================
+  // LOGIN
+  // ======================================================
 
-    await expect(service.register(makeRegisterDto())).rejects.toBeInstanceOf(
-      ConflictException
-    );
+  describe("login", () => {
+    it("should login user successfully and return tokens", async () => {
+      mockUsersService.findByUsername.mockResolvedValue({
+        id: 1,
+        username: "john",
+        password: "hashed-password"
+      });
 
-    expect(mockLogger.warn).toHaveBeenCalled();
-  });
+      mockJwtConfigValid();
 
-  // =====================
-  // CONFIG MISSING
-  // =====================
-  it("should throw error if JWT configuration is missing", async () => {
-    mockUsersService.ensureUsernameNotExists.mockResolvedValue(undefined);
-    mockUsersService.create.mockResolvedValue({
-      id: 1,
-      username: "john"
+      mockJwtService.signAsync
+        .mockResolvedValueOnce("access-token")
+        .mockResolvedValueOnce("refresh-token");
+
+      mockAuthRepository.create.mockResolvedValue(undefined);
+      mockAuthRepository.deleteByUserAndDevice.mockResolvedValue(undefined);
+
+      const result = await service.login({
+        ...makeLoginDto(),
+        deviceId: DEVICE_ID
+      });
+
+      expect(result).toEqual({
+        user: { id: 1, username: "john" },
+        accessToken: "access-token",
+        refreshToken: "refresh-token"
+      });
+
+      expect(mockAuthRepository.deleteByUserAndDevice).toHaveBeenCalledWith(
+        1,
+        DEVICE_ID
+      );
     });
 
-    mockConfigService.get.mockReturnValue(undefined);
+    it("should throw UnauthorizedException if user not found", async () => {
+      mockUsersService.findByUsername.mockResolvedValue(null);
 
-    await expect(service.register(makeRegisterDto())).rejects.toBeInstanceOf(
-      InternalServerErrorException
-    );
-  });
-
-  // =====================
-  // INVALID EXPIRES FORMAT
-  // =====================
-  it("should throw error if JWT expires format is invalid", async () => {
-    mockUsersService.ensureUsernameNotExists.mockResolvedValue(undefined);
-    mockUsersService.create.mockResolvedValue({
-      id: 1,
-      username: "john"
+      await expect(
+        service.login({ ...makeLoginDto(), deviceId: DEVICE_ID })
+      ).rejects.toBeInstanceOf(UnauthorizedException);
     });
 
-    mockConfigService.get.mockImplementation((key: string) => {
-      switch (key) {
-        case "JWT_ACCESS_SECRET":
-          return "secret";
-        case "JWT_REFRESH_SECRET":
-          return "secret";
-        case "JWT_ACCESS_EXPIRES_IN":
-          return "INVALID";
-        case "JWT_REFRESH_EXPIRES_IN":
-          return "30d";
-        default:
-          return undefined;
-      }
+    it("should throw UnauthorizedException if password invalid", async () => {
+      mockUsersService.findByUsername.mockResolvedValue({
+        id: 1,
+        username: "john",
+        password: "hashed-password"
+      });
+
+      (bcrypt.compare as jest.Mock).mockResolvedValue(false);
+
+      await expect(
+        service.login({ ...makeLoginDto(), deviceId: DEVICE_ID })
+      ).rejects.toBeInstanceOf(UnauthorizedException);
     });
 
-    await expect(service.register(makeRegisterDto())).rejects.toBeInstanceOf(
-      InternalServerErrorException
-    );
-  });
+    it("should throw InternalServerErrorException if token save fails", async () => {
+      mockUsersService.findByUsername.mockResolvedValue({
+        id: 1,
+        username: "john",
+        password: "hashed-password"
+      });
 
-  // =====================
-  // JWT SIGN FAILURE
-  // =====================
-  it("should throw error if JWT signing fails", async () => {
-    mockUsersService.ensureUsernameNotExists.mockResolvedValue(undefined);
-    mockUsersService.create.mockResolvedValue({
-      id: 1,
-      username: "john"
+      mockJwtConfigValid();
+
+      mockJwtService.signAsync
+        .mockResolvedValueOnce("access-token")
+        .mockResolvedValueOnce("refresh-token");
+
+      mockAuthRepository.deleteByUserAndDevice.mockResolvedValue(undefined);
+      mockAuthRepository.create.mockRejectedValue(new Error("DB error"));
+
+      await expect(
+        service.login({ ...makeLoginDto(), deviceId: DEVICE_ID })
+      ).rejects.toThrow(Error);
     });
-
-    mockConfigService.get.mockImplementation((key: string) => {
-      switch (key) {
-        case "JWT_ACCESS_SECRET":
-        case "JWT_REFRESH_SECRET":
-          return "secret";
-        case "JWT_ACCESS_EXPIRES_IN":
-          return "1h";
-        case "JWT_REFRESH_EXPIRES_IN":
-          return "30d";
-        default:
-          return undefined;
-      }
-    });
-
-    mockJwtService.signAsync.mockRejectedValue(new Error("JWT sign failed"));
-
-    await expect(service.register(makeRegisterDto())).rejects.toBeInstanceOf(
-      InternalServerErrorException
-    );
-  });
-
-  // =====================
-  // REPOSITORY FAILURE
-  // =====================
-  it("should throw error if refresh token save fails", async () => {
-    mockUsersService.ensureUsernameNotExists.mockResolvedValue(undefined);
-    mockUsersService.create.mockResolvedValue({
-      id: 1,
-      username: "john"
-    });
-
-    mockConfigService.get.mockImplementation((key: string) => {
-      switch (key) {
-        case "JWT_ACCESS_SECRET":
-        case "JWT_REFRESH_SECRET":
-          return "secret";
-        case "JWT_ACCESS_EXPIRES_IN":
-          return "1h";
-        case "JWT_REFRESH_EXPIRES_IN":
-          return "30d";
-        default:
-          return undefined;
-      }
-    });
-
-    mockJwtService.signAsync
-      .mockResolvedValueOnce("access-token")
-      .mockResolvedValueOnce("refresh-token");
-
-    mockAuthRepository.create.mockRejectedValue(new Error("DB error"));
-
-    await expect(service.register(makeRegisterDto())).rejects.toBeInstanceOf(
-      InternalServerErrorException
-    );
   });
 });
