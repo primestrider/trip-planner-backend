@@ -44,3 +44,8 @@ export type AuthUserResponse = {
   accessToken: string;
   refreshToken: string;
 };
+
+export type JwtAccessPayload = {
+  sub: string;
+  role: string;
+};
