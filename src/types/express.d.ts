@@ -1,7 +1,12 @@
-import "express";
+import { AccessTokenPayload } from "src/auth/models";
 
-declare module "express" {
-  export interface Request {
-    deviceId?: string;
+declare global {
+  namespace Express {
+    interface Request {
+      deviceId?: string;
+      user?: AccessTokenPayload;
+    }
   }
 }
+
+export {};

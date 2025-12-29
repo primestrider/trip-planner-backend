@@ -1,9 +1,11 @@
 import {
   ConflictException,
   Injectable,
-  InternalServerErrorException
+  InternalServerErrorException,
+  NotFoundException
 } from "@nestjs/common";
 import { UsersRepository } from "./users.repository";
+import { User } from "@prisma/client";
 
 /**
  * UsersService contains domain-level business logic related to user management.
@@ -49,5 +51,25 @@ export class UsersService {
 
       throw new InternalServerErrorException("Failed to create user");
     }
+  }
+
+  /**
+   * Find a user by user ID.
+   *
+   * Used in authentication flows such as refresh token
+   * to retrieve user information safely.
+   *
+   * @param userId User ID
+   * @returns User entity
+   * @throws NotFoundException if user does not exist
+   */
+  async findUserBydId(userId: string): Promise<User> {
+    const user = await this.usersRepository.findById(userId);
+
+    if (!user) {
+      throw new NotFoundException("User not found");
+    }
+
+    return user;
   }
 }

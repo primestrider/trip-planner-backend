@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { PrismaService } from "../common/prisma.service";
 import { CreateRefreshToken } from "./models";
+import { UserAccessToken } from "@prisma/client";
 
 /**
  * Repository responsible for managing refresh tokens
@@ -27,6 +28,55 @@ export class AuthRepository {
       where: {
         userId,
         deviceId
+      }
+    });
+  }
+
+  /**
+   * Find an active refresh token record for a user
+   * and device.
+   *
+   * Used during refresh token validation.
+   *
+   * @param userId User identifier
+   * @param deviceId Device identifier
+   * @returns Refresh token record or null if not found
+   */
+  async findByUserAndDevice(
+    userId: string,
+    deviceId: string
+  ): Promise<UserAccessToken | null> {
+    return this.prisma.userAccessToken.findFirst({
+      where: {
+        userId: userId,
+        deviceId: deviceId,
+        expiresAt: {
+          gt: new Date()
+        }
+      }
+    });
+  }
+
+  /**
+   * Rotate (update) an existing refresh token.
+   *
+   * This invalidates the previous refresh token
+   * and replaces it with a new one.
+   *
+   * @param tokenId
+   * @param tokenHash
+   * @param expiresAt
+   */
+  async updateRefreshToken(
+    tokenId: string,
+    tokenHash: string,
+    expiresAt: Date
+  ): Promise<void> {
+    await this.prisma.userAccessToken.update({
+      where: { id: tokenId },
+      data: {
+        tokenHash: tokenHash,
+        expiresAt: expiresAt
       }
     });
   }
