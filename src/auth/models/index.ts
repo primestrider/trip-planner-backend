@@ -49,3 +49,9 @@ export type JwtAccessPayload = {
   sub: string;
   role: string;
 };
+
+export type LogoutType = "current" | "all_devices";
+
+export interface LogoutDto {
+  type?: LogoutType;
+}

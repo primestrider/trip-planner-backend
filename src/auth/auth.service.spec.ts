@@ -37,7 +37,7 @@ const mockUsersService = {
 
 const mockAuthRepository = {
   create: jest.fn(),
-  deleteByUserAndDevice: jest.fn()
+  deleteTokenByUserAndDevice: jest.fn()
 };
 
 const mockJwtService = {
@@ -190,7 +190,9 @@ describe("AuthService", () => {
         .mockResolvedValueOnce("refresh-token");
 
       mockAuthRepository.create.mockResolvedValue(undefined);
-      mockAuthRepository.deleteByUserAndDevice.mockResolvedValue(undefined);
+      mockAuthRepository.deleteTokenByUserAndDevice.mockResolvedValue(
+        undefined
+      );
 
       const result = await service.login({
         ...makeLoginDto(),
@@ -203,10 +205,9 @@ describe("AuthService", () => {
         refreshToken: "refresh-token"
       });
 
-      expect(mockAuthRepository.deleteByUserAndDevice).toHaveBeenCalledWith(
-        1,
-        DEVICE_ID
-      );
+      expect(
+        mockAuthRepository.deleteTokenByUserAndDevice
+      ).toHaveBeenCalledWith(1, DEVICE_ID);
     });
 
     it("should throw UnauthorizedException if user not found", async () => {
@@ -244,7 +245,9 @@ describe("AuthService", () => {
         .mockResolvedValueOnce("access-token")
         .mockResolvedValueOnce("refresh-token");
 
-      mockAuthRepository.deleteByUserAndDevice.mockResolvedValue(undefined);
+      mockAuthRepository.deleteTokenByUserAndDevice.mockResolvedValue(
+        undefined
+      );
       mockAuthRepository.create.mockRejectedValue(new Error("DB error"));
 
       await expect(

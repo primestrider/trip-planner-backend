@@ -14,31 +14,32 @@ import {
   LoginSchema,
   RegisterSchema
 } from "./auth.validation";
-import { BaseResponse } from "src/common/models";
-import { AuthUserResponse } from "./models";
+
+import { type AuthUserResponse, type LogoutType } from "./models";
 import { CurrentDevice } from "src/common/decorator/device.decorator";
 import { RefreshTokenGuard } from "./guards/refresh-token.guard";
 import { CurrentUser } from "src/common/decorator/current-user.decorator";
+import { AccessTokenGuard } from "./guards/access-token.guard";
 
 @Controller("authentication")
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   /**
-   * Register a new user.
-   *
+   * Register as a new user
    * POST /authentication/register
+   * @param body
+   * @param deviceId
+   * @returns
    */
   @Post("register")
   @HttpCode(HttpStatus.CREATED)
   async register(
     @Body(ValidationPipe(RegisterSchema)) body: RegisterUserDto,
     @CurrentDevice() deviceId: string
-  ): Promise<BaseResponse<AuthUserResponse>> {
-    const result = await this.authService.register({ ...body, deviceId });
-    return {
-      data: result
-    };
+  ): Promise<AuthUserResponse> {
+    const response = await this.authService.register({ ...body, deviceId });
+    return response;
   }
 
   /**
@@ -49,11 +50,9 @@ export class AuthController {
   async login(
     @Body(ValidationPipe(LoginSchema)) body: LoginUserDto,
     @CurrentDevice() deviceId: string
-  ): Promise<BaseResponse<AuthUserResponse>> {
-    const result = await this.authService.login({ ...body, deviceId });
-    return {
-      data: result
-    };
+  ): Promise<AuthUserResponse> {
+    const response = await this.authService.login({ ...body, deviceId });
+    return response;
   }
 
   /**
@@ -75,15 +74,33 @@ export class AuthController {
     @CurrentUser("sub") userId: string,
     @CurrentDevice() deviceId: string,
     @Body("refreshToken") refreshToken: string
-  ): Promise<BaseResponse<AuthUserResponse>> {
-    const result = await this.authService.refreshToken(
+  ): Promise<AuthUserResponse> {
+    const response = await this.authService.refreshToken(
       userId,
       deviceId,
       refreshToken
     );
 
-    return {
-      data: result
-    };
+    return response;
+  }
+
+  /**
+   * Logout user
+   *  POST /authentication/logout
+   * @param userId
+   * @param deviceId
+   * @param type
+   * @returns
+   */
+  @Post("logout")
+  @UseGuards(AccessTokenGuard)
+  @HttpCode(HttpStatus.OK)
+  async logout(
+    @CurrentUser("sub") userId: string,
+    @CurrentDevice() deviceId: string,
+    @Body("type") type?: LogoutType
+  ): Promise<null> {
+    await this.authService.logout(userId, deviceId, type);
+    return null;
   }
 }
