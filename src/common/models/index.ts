@@ -1,3 +1,5 @@
-export type BaseResponse<T> = {
-  data?: T;
-};
+export interface BaseResponse<T = unknown> {
+  statusCode: number;
+  message?: string;
+  data: T;
+}

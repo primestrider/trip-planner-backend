@@ -23,11 +23,25 @@ export class AuthRepository {
   /**
    *  Remove existing refresh token for the same user & device
    */
-  async deleteByUserAndDevice(userId: string, deviceId: string): Promise<void> {
+  async deleteTokenByUserAndDevice(
+    userId: string,
+    deviceId: string
+  ): Promise<void> {
     await this.prisma.userAccessToken.deleteMany({
       where: {
         userId,
         deviceId
+      }
+    });
+  }
+
+  /**
+   * Remove all refresh token for user
+   */
+  async deleteAllTokenUser(userId: string): Promise<void> {
+    await this.prisma.userAccessToken.deleteMany({
+      where: {
+        userId: userId
       }
     });
   }

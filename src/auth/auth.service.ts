@@ -3,7 +3,8 @@ import {
   Injectable,
   InternalServerErrorException,
   Inject,
-  UnauthorizedException
+  UnauthorizedException,
+  BadRequestException
 } from "@nestjs/common";
 import { WINSTON_MODULE_PROVIDER } from "nest-winston";
 import { Logger } from "winston";
@@ -17,6 +18,7 @@ import {
   AccessTokenPayload,
   AuthUserResponse,
   LoginContext,
+  LogoutType,
   RegisterContext
 } from "./models";
 import { parseDuration } from "src/utils/parser";
@@ -239,7 +241,7 @@ export class AuthService {
       await this.generateRefreshToken(payload);
 
     // for overwrite token for same device
-    await this.authRepository.deleteByUserAndDevice(user.id, deviceId);
+    await this.authRepository.deleteTokenByUserAndDevice(user.id, deviceId);
 
     await this.authRepository.create({
       userId: user.id,
@@ -325,5 +327,39 @@ export class AuthService {
       accessToken: accessToken,
       refreshToken: newRefreshToken
     };
+  }
+
+  /**
+   * Logout user in current devices or all devices
+   * @param userId
+   * @param deviceId
+   * @param type
+   */
+  async logout(
+    userId: string,
+    deviceId: string,
+    type: LogoutType = "current"
+  ): Promise<void> {
+    const resolvedType: LogoutType = type ?? "current";
+
+    this.logger.info("logout user requested", {
+      userId,
+      deviceId,
+      type
+    });
+
+    if (resolvedType !== "current" && resolvedType !== "all_devices") {
+      throw new BadRequestException(
+        "Invalid logout type. Allowed values: current, all_devices"
+      );
+    }
+
+    if (resolvedType == "all_devices") {
+      await this.authRepository.deleteAllTokenUser(userId);
+    }
+
+    if (resolvedType == "current") {
+      await this.authRepository.deleteTokenByUserAndDevice(userId, deviceId);
+    }
   }
 }
