@@ -215,6 +215,8 @@ export class AuthService {
 
   **/
   async login(request: LoginContext): Promise<AuthUserResponse> {
+    this.logger.info("login user requested", { username: request.username });
+
     const { username, password, deviceId } = request;
 
     const user = await this.usersService.findByUsername(username);
@@ -250,6 +252,78 @@ export class AuthService {
       user: { id: user.id, username: user.username },
       accessToken,
       refreshToken
+    };
+  }
+
+  /**
+   * Refresh authentication tokens for a user.
+   *
+   * This method validates the provided refresh token against
+   * the stored hashed token, rotates the refresh token,
+   * and issues a new access token.
+   *
+   * @param userId User identifier extracted from refresh token payload
+   * @param deviceId Device identifier for session scoping
+   * @param refreshToken Raw refresh token provided by client
+   * @returns New access & refresh token pair with user info
+   * @throws {UnauthorizedException} If refresh token is invalid or revoked
+   */
+  async refreshToken(
+    userId: string,
+    deviceId: string,
+    refreshToken: string
+  ): Promise<AuthUserResponse> {
+    this.logger.info("refresh token user requested", { id: userId });
+
+    // find refresh token in DB
+    const tokenRecord = await this.authRepository.findByUserAndDevice(
+      userId,
+      deviceId
+    );
+
+    if (!tokenRecord) {
+      throw new UnauthorizedException("Invalid refresh token");
+    }
+
+    // compare provided refreshToken with hased token from db
+    const isTokenValid = await bcrypt.compare(
+      refreshToken,
+      tokenRecord.tokenHash
+    );
+
+    if (!isTokenValid) {
+      throw new UnauthorizedException("Invalid refresh token");
+    }
+
+    // 3. Load user (for response consistency)
+    const user = await this.usersService.findUserBydId(userId);
+
+    const payload: AccessTokenPayload = {
+      sub: user.id,
+      username: user.username
+    };
+
+    // generate new token
+    const accessToken = await this.generateAccessToken(payload);
+
+    const { token: newRefreshToken, expiresAt } =
+      await this.generateRefreshToken(payload);
+
+    // update refresh token in db
+
+    await this.authRepository.updateRefreshToken(
+      tokenRecord.id,
+      await bcrypt.hash(newRefreshToken, 10),
+      expiresAt
+    );
+
+    return {
+      user: {
+        id: user.id,
+        username: user.username
+      },
+      accessToken: accessToken,
+      refreshToken: newRefreshToken
     };
   }
 }

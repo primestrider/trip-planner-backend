@@ -1,4 +1,11 @@
-import { Body, Controller, HttpCode, HttpStatus, Post } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  HttpCode,
+  HttpStatus,
+  Post,
+  UseGuards
+} from "@nestjs/common";
 import { AuthService } from "./auth.service";
 import { ValidationPipe } from "src/common/validation/validation.pipe";
 import {
@@ -10,6 +17,8 @@ import {
 import { BaseResponse } from "src/common/models";
 import { AuthUserResponse } from "./models";
 import { CurrentDevice } from "src/common/decorator/device.decorator";
+import { RefreshTokenGuard } from "./guards/refresh-token.guard";
+import { CurrentUser } from "src/common/decorator/current-user.decorator";
 
 @Controller("authentication")
 export class AuthController {
@@ -42,6 +51,37 @@ export class AuthController {
     @CurrentDevice() deviceId: string
   ): Promise<BaseResponse<AuthUserResponse>> {
     const result = await this.authService.login({ ...body, deviceId });
+    return {
+      data: result
+    };
+  }
+
+  /**
+   * Refresh authentication tokens.
+   *
+   * POST /authentication/refresh-token
+   * This endpoint is protected by RefreshTokenGuard.
+   * The refresh token is validated before reaching this handler.
+
+   * @param req
+   * @param deviceId
+   * @param refreshToken
+   * @returns
+   */
+  @UseGuards(RefreshTokenGuard)
+  @Post("/refresh-token")
+  @HttpCode(HttpStatus.OK)
+  async refreshToken(
+    @CurrentUser("sub") userId: string,
+    @CurrentDevice() deviceId: string,
+    @Body("refreshToken") refreshToken: string
+  ): Promise<BaseResponse<AuthUserResponse>> {
+    const result = await this.authService.refreshToken(
+      userId,
+      deviceId,
+      refreshToken
+    );
+
     return {
       data: result
     };
