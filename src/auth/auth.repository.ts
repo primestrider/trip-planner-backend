@@ -47,6 +47,16 @@ export class AuthRepository {
   }
 
   /**
+   * Remove refresh token for user by id
+   * @param id
+   */
+  async deleteTokenById(id: string): Promise<void> {
+    await this.prisma.userAccessToken.delete({
+      where: { id }
+    });
+  }
+
+  /**
    * Find an active refresh token record for a user
    * and device.
    *
@@ -63,10 +73,7 @@ export class AuthRepository {
     return this.prisma.userAccessToken.findFirst({
       where: {
         userId: userId,
-        deviceId: deviceId,
-        expiresAt: {
-          gt: new Date()
-        }
+        deviceId: deviceId
       }
     });
   }
