@@ -1,6 +1,9 @@
 import { Injectable } from "@nestjs/common";
 import { PrismaService } from "../common/prisma.service";
 
+import { User, Prisma } from "@prisma/client";
+import { UpdateUserModel } from "./models";
+
 /**
  * UsersRepository
  *
@@ -48,6 +51,41 @@ export class UsersRepository {
    */
   async create(data: { username: string; password: string }) {
     return this.prisma.user.create({
+      data
+    });
+  }
+
+  /**
+   * Update user to database
+   * @param userId
+   * @param payload
+   * @returns
+   */
+  async update(userId: string, payload: UpdateUserModel): Promise<User> {
+    const data: Prisma.UserUpdateArgs["data"] = {
+      ...(payload.password && { password: payload.password }),
+      ...(payload.passwordChangedAt && {
+        passwordChangedAt: payload.passwordChangedAt
+      }),
+      ...(payload.failedLoginAttempts !== undefined && {
+        failedLoginAttempts: payload.failedLoginAttempts
+      }),
+      ...(payload.lockUntil !== undefined && {
+        lockUntil: payload.lockUntil
+      }),
+      ...(payload.lastLoginAt && {
+        lastLoginAt: payload.lastLoginAt
+      }),
+      ...(payload.isActive !== undefined && {
+        isActive: payload.isActive
+      }),
+      ...(payload.deletedAt !== undefined && {
+        deletedAt: payload.deletedAt
+      })
+    };
+
+    return this.prisma.user.update({
+      where: { id: userId },
       data
     });
   }

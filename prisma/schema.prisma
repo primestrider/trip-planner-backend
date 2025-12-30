@@ -13,17 +13,24 @@ enum UserRole {
 }
 
 model User {
-  id       String   @id @default(uuid())
-  username String   @unique
+  id       String  @id @default(uuid())
+  username String  @unique
   password String
   name     String?
+
   role     UserRole @default(USER)
   isActive Boolean  @default(true)
 
+  passwordChangedAt   DateTime? @db.Timestamp(0)
+  failedLoginAttempts Int       @default(0)
+  lockUntil           DateTime? @db.Timestamp(0)
+  lastLoginAt         DateTime? @db.Timestamp(0)
+
   accessTokens UserAccessToken[]
 
-  createdAt DateTime @default(now()) @db.Timestamp(0)
-  updatedAt DateTime @updatedAt @db.Timestamp(0)
+  createdAt DateTime  @default(now()) @db.Timestamp(0)
+  updatedAt DateTime  @updatedAt @db.Timestamp(0)
+  deletedAt DateTime? @db.Timestamp(0)
 
   @@map("users")
 }
@@ -34,18 +41,17 @@ model UserAccessToken {
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  deviceId String // 
+  deviceId String
 
   tokenHash String
-  expiresAt DateTime @db.Timestamp(0)
-
-  // optional, keep if you want soft revoke
+  expiresAt DateTime  @db.Timestamp(0)
   revokedAt DateTime? @db.Timestamp(0)
 
   createdAt DateTime @default(now()) @db.Timestamp(0)
 
+  @@unique([userId, deviceId])
   @@index([userId])
-  @@index([userId, deviceId])
   @@index([expiresAt])
+  @@index([revokedAt, expiresAt])
   @@map("user_access_tokens")
 }

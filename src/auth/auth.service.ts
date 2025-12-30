@@ -222,12 +222,15 @@ export class AuthService {
     const { username, password, deviceId } = request;
 
     const user = await this.usersService.findByUsername(username);
-    if (!user) {
+    if (!user?.isActive) {
       throw new UnauthorizedException("Invalid username or password");
     }
 
+    this.usersService.ensureAccountNotLocked(user);
+
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
+      await this.usersService.increaseFailedLogin(user.id);
       throw new UnauthorizedException("Invalid username or password");
     }
 
@@ -235,6 +238,8 @@ export class AuthService {
       sub: user.id,
       username: user.username
     };
+
+    await this.usersService.resetFailedLogin(user.id);
 
     const accessToken = await this.generateAccessToken(payload);
     const { token: refreshToken, expiresAt } =
@@ -249,6 +254,10 @@ export class AuthService {
       tokenHash: await bcrypt.hash(refreshToken, 10),
       expiresAt
     });
+
+    await this.usersService.resetFailedLogin(user.id);
+
+    await this.usersService.updatelastLogin(user.id);
 
     return {
       user: { id: user.id, username: user.username },
@@ -284,7 +293,21 @@ export class AuthService {
     );
 
     if (!tokenRecord) {
+      this.logger.warn("Invalid refresh token provided", {
+        userId,
+        deviceId
+      });
       throw new UnauthorizedException("Invalid refresh token");
+    }
+    if (tokenRecord.expiresAt < new Date()) {
+      this.logger.warn("Refresh token expired", {
+        userId,
+        deviceId,
+        tokenId: tokenRecord.id
+      });
+
+      await this.authRepository.deleteTokenById(tokenRecord.id);
+      throw new UnauthorizedException("Refresh token expired");
     }
 
     // compare provided refreshToken with hased token from db
@@ -294,11 +317,16 @@ export class AuthService {
     );
 
     if (!isTokenValid) {
+      this.logger.warn("Invalid refresh token provided", {
+        userId,
+        deviceId
+      });
+      await this.authRepository.deleteTokenById(tokenRecord.id);
       throw new UnauthorizedException("Invalid refresh token");
     }
 
     // 3. Load user (for response consistency)
-    const user = await this.usersService.findUserBydId(userId);
+    const user = await this.usersService.findUserById(userId);
 
     const payload: AccessTokenPayload = {
       sub: user.id,
