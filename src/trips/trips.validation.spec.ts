@@ -95,3 +95,27 @@ describe("CreateTripSchema budget", () => {
     expect(CreateTripSchema.safeParse(input).success).toBe(false);
   });
 });
+
+describe("CreateTripSchema cover image", () => {
+  it("should accept an https image URL or null", () => {
+    for (const coverImageUrl of [
+      "https://images.unsplash.com/photo-1537996194471-e657df975ab4?w=1200",
+      null
+    ]) {
+      expect(
+        CreateTripSchema.safeParse({ ...validTrip, coverImageUrl }).success
+      ).toBe(true);
+    }
+  });
+
+  it.each([
+    "http://example.com/a.jpg",
+    "javascript:alert(1)",
+    "data:image/png;base64,AAAA",
+    "not a url"
+  ])("should reject %s", (coverImageUrl) => {
+    expect(
+      CreateTripSchema.safeParse({ ...validTrip, coverImageUrl }).success
+    ).toBe(false);
+  });
+});

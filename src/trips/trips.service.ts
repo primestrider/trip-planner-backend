@@ -47,6 +47,7 @@ export class TripsService {
       title: trip.title,
       destination: trip.destination,
       description: trip.description,
+      coverImageUrl: trip.coverImageUrl,
       startDate: toDateString(trip.startDate),
       endDate: toDateString(trip.endDate),
       currency: trip.currency,
@@ -63,6 +64,7 @@ export class TripsService {
       title: payload.title,
       destination: payload.destination,
       description: payload.description ?? null,
+      coverImageUrl: payload.coverImageUrl ?? null,
       startDate: toDate(payload.startDate),
       endDate: toDate(payload.endDate),
       ...(payload.currency !== undefined && { currency: payload.currency }),
@@ -151,6 +153,9 @@ export class TripsService {
       ...(payload.description !== undefined && {
         description: payload.description
       }),
+      ...(payload.coverImageUrl !== undefined && {
+        coverImageUrl: payload.coverImageUrl
+      }),
       ...(payload.startDate !== undefined && {
         startDate: toDate(payload.startDate)
       }),
@@ -208,6 +213,7 @@ export class TripsService {
       title: payload.title ?? `${trip.title} (copy)`.slice(0, 150),
       destination: trip.destination,
       description: trip.description,
+      coverImageUrl: trip.coverImageUrl,
       startDate,
       endDate: addDays(startDate, totalDays - 1),
       currency: trip.currency,

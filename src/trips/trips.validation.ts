@@ -13,6 +13,13 @@ const TripFields = z.object({
 
   description: z.string().trim().max(5000).nullable().optional(),
 
+  // https image URL shown as the trip cover
+  coverImageUrl: z
+    .url({ protocol: /^https$/ })
+    .max(2048)
+    .nullable()
+    .optional(),
+
   // Date only, format YYYY-MM-DD
   startDate: z.iso.date(),
 

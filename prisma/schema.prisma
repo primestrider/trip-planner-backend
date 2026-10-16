@@ -89,6 +89,9 @@ model Trip {
   destination String  @db.VarChar(150)
   description String? @db.Text
 
+  // https image shown as the trip cover
+  coverImageUrl String? @db.VarChar(2048)
+
   startDate DateTime @db.Date
   endDate   DateTime @db.Date
 

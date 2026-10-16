@@ -38,6 +38,7 @@ const trip = {
   title: "Bali",
   destination: "Bali, Indonesia",
   description: null,
+  coverImageUrl: null,
   startDate: new Date("2026-11-01T00:00:00.000Z"),
   endDate: new Date("2026-11-05T00:00:00.000Z"),
   currency: "IDR",
@@ -60,6 +61,7 @@ const tripResponse = {
   title: "Bali",
   destination: "Bali, Indonesia",
   description: null,
+  coverImageUrl: null,
   startDate: "2026-11-01",
   endDate: "2026-11-05",
   currency: "IDR",
@@ -106,6 +108,7 @@ describe("TripsService", () => {
         title: "Bali",
         destination: "Bali, Indonesia",
         description: null,
+        coverImageUrl: null,
         startDate: trip.startDate,
         endDate: trip.endDate,
         budgetAmount: null
@@ -361,6 +364,7 @@ describe("TripsService", () => {
         title: "Bali (copy)",
         destination: "Bali, Indonesia",
         description: null,
+        coverImageUrl: null,
         // 5-day trip keeps its length
         startDate: new Date("2027-01-10T00:00:00.000Z"),
         endDate: new Date("2027-01-14T00:00:00.000Z"),
