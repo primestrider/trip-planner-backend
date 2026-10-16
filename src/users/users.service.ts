@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -7,6 +8,8 @@ import {
 } from "@nestjs/common";
 import { UsersRepository } from "./users.repository";
 import { User } from "@prisma/client";
+import { AvatarResponse, UserProfileResponse } from "./models";
+import { UpdateProfileDto } from "./users.validation";
 
 /**
  * UsersService contains domain-level business logic related to user management.
@@ -132,5 +135,66 @@ export class UsersService {
     await this.usersRepository.update(userId, {
       lastLoginAt: new Date()
     });
+  }
+
+  /**
+   * Get profile of an active user.
+   *
+   * @throws NotFoundException if user does not exist, is inactive or deleted
+   */
+  async getProfile(userId: string): Promise<UserProfileResponse> {
+    const user = await this.usersRepository.findByIdWithAvatar(userId);
+
+    if (!user || !user.isActive || user.deletedAt) {
+      throw new NotFoundException("User not found");
+    }
+
+    return {
+      id: user.id,
+      username: user.username,
+      name: user.name,
+      role: user.role,
+      avatar: user.avatar,
+      lastLoginAt: user.lastLoginAt,
+      createdAt: user.createdAt
+    };
+  }
+
+  /**
+   * Update name and/or avatar of the user profile.
+   * Passing `null` clears the field.
+   *
+   * @throws NotFoundException if user is not available
+   * @throws BadRequestException if avatar does not exist or is inactive
+   */
+  async updateProfile(
+    userId: string,
+    payload: UpdateProfileDto
+  ): Promise<UserProfileResponse> {
+    await this.getProfile(userId);
+
+    if (payload.avatarId != null) {
+      const avatar = await this.usersRepository.findActiveAvatarById(
+        payload.avatarId
+      );
+
+      if (!avatar) {
+        throw new BadRequestException("Avatar not found");
+      }
+    }
+
+    await this.usersRepository.update(userId, {
+      name: payload.name,
+      avatarId: payload.avatarId
+    });
+
+    return this.getProfile(userId);
+  }
+
+  /**
+   * List avatars available for selection.
+   */
+  async getAvatars(): Promise<AvatarResponse[]> {
+    return this.usersRepository.findActiveAvatars();
   }
 }

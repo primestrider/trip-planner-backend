@@ -26,12 +26,20 @@ model User {
   lockUntil           DateTime? @db.Timestamp(0)
   lastLoginAt         DateTime? @db.Timestamp(0)
 
-  accessTokens UserAccessToken[]
+  // 🔽 AVATAR RELATION
+  avatarId Int?
+  avatar   Avatar? @relation(fields: [avatarId], references: [id])
+
+  accessTokens    UserAccessToken[]
+  trips           Trip[]
+  tripMemberships TripMember[]
+  paidExpenses    TripExpense[]
 
   createdAt DateTime  @default(now()) @db.Timestamp(0)
   updatedAt DateTime  @updatedAt @db.Timestamp(0)
   deletedAt DateTime? @db.Timestamp(0)
 
+  @@index([avatarId])
   @@map("users")
 }
 
@@ -54,4 +62,240 @@ model UserAccessToken {
   @@index([expiresAt])
   @@index([revokedAt, expiresAt])
   @@map("user_access_tokens")
+}
+
+model Avatar {
+  id       Int     @id @default(autoincrement())
+  url      String  @unique @db.VarChar(255)
+  isActive Boolean @default(true)
+  order    Int     @default(0)
+
+  users User[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Trip {
+  id String @id @default(uuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title       String  @db.VarChar(150)
+  destination String  @db.VarChar(150)
+  description String? @db.Text
+
+  startDate DateTime @db.Date
+  endDate   DateTime @db.Date
+
+  // ISO 4217 currency for budget and expenses
+  currency     String   @default("IDR") @db.Char(3)
+  budgetAmount Decimal? @db.Decimal(14, 2)
+
+  itineraryItems ItineraryItem[]
+  members        TripMember[]
+  accommodations TripAccommodation[]
+  transports     TripTransport[]
+  expenses       TripExpense[]
+  invites        TripInvite[]
+
+  createdAt DateTime @default(now()) @db.Timestamp(0)
+  updatedAt DateTime @updatedAt @db.Timestamp(0)
+
+  @@index([userId, startDate])
+  @@map("trips")
+}
+
+// Role of a collaborator; the trip owner is Trip.userId
+enum TripMemberRole {
+  EDITOR
+  VIEWER
+}
+
+model TripMember {
+  id String @id @default(uuid())
+
+  tripId String
+  trip   Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  role TripMemberRole
+
+  createdAt DateTime @default(now()) @db.Timestamp(0)
+  updatedAt DateTime @updatedAt @db.Timestamp(0)
+
+  @@unique([tripId, userId])
+  @@index([userId])
+  @@map("trip_members")
+}
+
+// Shareable link that lets a signed-in user join a trip
+model TripInvite {
+  id String @id @default(uuid())
+
+  tripId String
+  trip   Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  // SHA-256 of the token in the link; the token itself is never stored
+  tokenHash String @unique @db.Char(64)
+
+  role TripMemberRole
+
+  expiresAt DateTime  @db.Timestamp(0)
+  // null = unlimited
+  maxUses   Int?
+  useCount  Int       @default(0)
+  revokedAt DateTime? @db.Timestamp(0)
+
+  createdAt DateTime @default(now()) @db.Timestamp(0)
+
+  @@index([tripId])
+  @@map("trip_invites")
+}
+
+model ItineraryItem {
+  id String @id @default(uuid())
+
+  tripId String
+  trip   Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  // 1-based day of the trip (Day 1 = trip startDate)
+  dayNumber Int
+
+  title       String  @db.VarChar(150)
+  description String? @db.Text
+
+  // place, typically picked from Google Maps
+  locationName      String?  @db.VarChar(255)
+  locationAddress   String?  @db.VarChar(500)
+  locationLatitude  Decimal? @db.Decimal(9, 6)
+  locationLongitude Decimal? @db.Decimal(9, 6)
+  locationPlaceId   String?  @db.VarChar(255)
+  locationUrl       String?  @db.VarChar(2048)
+
+  // HH:mm (24h)
+  startTime String? @db.VarChar(5)
+  endTime   String? @db.VarChar(5)
+
+  createdAt DateTime @default(now()) @db.Timestamp(0)
+  updatedAt DateTime @updatedAt @db.Timestamp(0)
+
+  @@index([tripId, dayNumber])
+  @@map("itinerary_items")
+}
+
+model TripAccommodation {
+  id String @id @default(uuid())
+
+  tripId String
+  trip   Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  name String @db.VarChar(150)
+
+  // place, typically picked from Google Maps
+  locationName      String?  @db.VarChar(255)
+  locationAddress   String?  @db.VarChar(500)
+  locationLatitude  Decimal? @db.Decimal(9, 6)
+  locationLongitude Decimal? @db.Decimal(9, 6)
+  locationPlaceId   String?  @db.VarChar(255)
+  locationUrl       String?  @db.VarChar(2048)
+
+  checkInDate  DateTime @db.Date
+  checkOutDate DateTime @db.Date
+
+  bookingCode String? @db.VarChar(100)
+  notes       String? @db.Text
+
+  createdAt DateTime @default(now()) @db.Timestamp(0)
+  updatedAt DateTime @updatedAt @db.Timestamp(0)
+
+  @@index([tripId, checkInDate])
+  @@map("trip_accommodations")
+}
+
+enum TransportType {
+  FLIGHT
+  TRAIN
+  BUS
+  CAR
+  FERRY
+  OTHER
+}
+
+model TripTransport {
+  id String @id @default(uuid())
+
+  tripId String
+  trip   Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  type    TransportType
+  // airline / operator, and flight or train number
+  carrier String?       @db.VarChar(100)
+  number  String?       @db.VarChar(50)
+
+  originName      String?  @db.VarChar(255)
+  originAddress   String?  @db.VarChar(500)
+  originLatitude  Decimal? @db.Decimal(9, 6)
+  originLongitude Decimal? @db.Decimal(9, 6)
+  originPlaceId   String?  @db.VarChar(255)
+  originUrl       String?  @db.VarChar(2048)
+
+  destinationName      String?  @db.VarChar(255)
+  destinationAddress   String?  @db.VarChar(500)
+  destinationLatitude  Decimal? @db.Decimal(9, 6)
+  destinationLongitude Decimal? @db.Decimal(9, 6)
+  destinationPlaceId   String?  @db.VarChar(255)
+  destinationUrl       String?  @db.VarChar(2048)
+
+  // local time at origin / destination, stored without timezone conversion
+  departureAt DateTime  @db.DateTime(0)
+  arrivalAt   DateTime? @db.DateTime(0)
+
+  bookingCode String? @db.VarChar(100)
+  notes       String? @db.Text
+
+  createdAt DateTime @default(now()) @db.Timestamp(0)
+  updatedAt DateTime @updatedAt @db.Timestamp(0)
+
+  @@index([tripId, departureAt])
+  @@map("trip_transports")
+}
+
+enum ExpenseCategory {
+  ACCOMMODATION
+  TRANSPORT
+  FOOD
+  ACTIVITY
+  SHOPPING
+  OTHER
+}
+
+model TripExpense {
+  id String @id @default(uuid())
+
+  tripId String
+  trip   Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  category ExpenseCategory
+  title    String          @db.VarChar(150)
+  // in trip currency
+  amount   Decimal         @db.Decimal(14, 2)
+
+  spentDate DateTime? @db.Date
+
+  // trip member who paid; kept as null if that user is deleted
+  paidByUserId String?
+  paidBy       User?   @relation(fields: [paidByUserId], references: [id], onDelete: SetNull)
+
+  notes String? @db.Text
+
+  createdAt DateTime @default(now()) @db.Timestamp(0)
+  updatedAt DateTime @updatedAt @db.Timestamp(0)
+
+  @@index([tripId, spentDate])
+  @@index([paidByUserId])
+  @@map("trip_expenses")
 }
