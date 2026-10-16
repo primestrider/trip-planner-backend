@@ -98,6 +98,7 @@ model Trip {
   accommodations TripAccommodation[]
   transports     TripTransport[]
   expenses       TripExpense[]
+  invites        TripInvite[]
 
   createdAt DateTime @default(now()) @db.Timestamp(0)
   updatedAt DateTime @updatedAt @db.Timestamp(0)
@@ -129,6 +130,30 @@ model TripMember {
   @@unique([tripId, userId])
   @@index([userId])
   @@map("trip_members")
+}
+
+// Shareable link that lets a signed-in user join a trip
+model TripInvite {
+  id String @id @default(uuid())
+
+  tripId String
+  trip   Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  // SHA-256 of the token in the link; the token itself is never stored
+  tokenHash String @unique @db.Char(64)
+
+  role TripMemberRole
+
+  expiresAt DateTime  @db.Timestamp(0)
+  // null = unlimited
+  maxUses   Int?
+  useCount  Int       @default(0)
+  revokedAt DateTime? @db.Timestamp(0)
+
+  createdAt DateTime @default(now()) @db.Timestamp(0)
+
+  @@index([tripId])
+  @@map("trip_invites")
 }
 
 model ItineraryItem {
