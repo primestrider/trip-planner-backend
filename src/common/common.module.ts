@@ -1,4 +1,7 @@
-import { Global, Module } from "@nestjs/common";
+import { Global, MiddlewareConsumer, Module, NestModule } from "@nestjs/common";
+import { APP_FILTER } from "@nestjs/core";
+import { AllExceptionsFilter } from "./filters/all-exceptions.filter";
+import { RequestContextMiddleware } from "./middleware/request-context.middleware";
 import { WinstonModule } from "nest-winston";
 import winston from "winston";
 import { ConfigModule } from "@nestjs/config";
@@ -42,11 +45,23 @@ import { ValidationService } from "./validation/validation.service";
   /**
    * Infrastructure-level providers shared across all modules.
    */
-  providers: [PrismaService, ValidationService],
+  providers: [
+    PrismaService,
+    ValidationService,
+    // one JSON shape for every error response
+    { provide: APP_FILTER, useClass: AllExceptionsFilter }
+  ],
 
   /**
    * Exported providers that can be injected into feature modules.
    */
   exports: [PrismaService, ValidationService]
 })
-export class CommonModule {}
+export class CommonModule implements NestModule {
+  /**
+   * Request id + access log for every route
+   */
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(RequestContextMiddleware).forRoutes("*path");
+  }
+}
