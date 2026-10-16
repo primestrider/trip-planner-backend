@@ -82,7 +82,8 @@ describe("AuthController", () => {
   // register
   // =====================
   describe("register", () => {
-    it("should register user and return wrapped response", async () => {
+    // wrapping into { statusCode, message, data } is done by ResponseInterceptor
+    it("should register user and return service result", async () => {
       const dto = makeRegisterDto();
 
       const serviceResult: AuthUserResponse = {
@@ -95,7 +96,7 @@ describe("AuthController", () => {
 
       const result = await controller.register(dto, DEVICE_ID);
 
-      expect(result).toEqual({ data: serviceResult });
+      expect(result).toEqual(serviceResult);
       expect(mockAuthService.register).toHaveBeenCalledWith({
         ...dto,
         deviceId: DEVICE_ID
@@ -117,7 +118,7 @@ describe("AuthController", () => {
   // login
   // =====================
   describe("login", () => {
-    it("should login user and return wrapped response", async () => {
+    it("should login user and return service result", async () => {
       const dto = makeLoginDto();
 
       const serviceResult: AuthUserResponse = {
@@ -130,7 +131,7 @@ describe("AuthController", () => {
 
       const result = await controller.login(dto, DEVICE_ID);
 
-      expect(result).toEqual({ data: serviceResult });
+      expect(result).toEqual(serviceResult);
       expect(mockAuthService.login).toHaveBeenCalledWith({
         ...dto,
         deviceId: DEVICE_ID

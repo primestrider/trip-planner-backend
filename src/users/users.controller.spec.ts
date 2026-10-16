@@ -58,7 +58,10 @@ describe("UsersController", () => {
 describe("UpdateProfileSchema", () => {
   it.each([
     [{ name: "  John  " }, { name: "John" }],
-    [{ name: null, avatarId: null }, { name: null, avatarId: null }],
+    [
+      { name: null, avatarId: null },
+      { name: null, avatarId: null }
+    ],
     [{ avatarId: 2 }, { avatarId: 2 }]
   ])("should accept %j", (input, expected) => {
     expect(UpdateProfileSchema.parse(input)).toEqual(expected);
