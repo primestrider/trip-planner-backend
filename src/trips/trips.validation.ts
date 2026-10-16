@@ -44,7 +44,22 @@ export const UpdateTripSchema = TripFields.partial()
 export const ListTripsQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
 
-  limit: z.coerce.number().int().min(1).max(100).default(20)
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+
+  // search in title and destination
+  q: z.string().trim().min(1).max(100).optional(),
+
+  // relative to `today`
+  status: z.enum(["upcoming", "ongoing", "past"]).optional(),
+
+  // owner: trips the user created; shared: trips the user collaborates on
+  role: z.enum(["owner", "shared"]).optional(),
+
+  // by start date
+  order: z.enum(["asc", "desc"]).default("desc"),
+
+  // client's local date (YYYY-MM-DD) for `status`; defaults to UTC today
+  today: z.iso.date().optional()
 });
 
 export const DuplicateTripSchema = z

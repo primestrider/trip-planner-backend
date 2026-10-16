@@ -122,10 +122,18 @@ describe("TripsService", () => {
         total: 21
       });
 
-      const result = await service.findAll("u1", { page: 2, limit: 10 });
+      const result = await service.findAll("u1", {
+        page: 2,
+        limit: 10,
+        order: "desc"
+      });
 
       expect(mockTripsRepository.findManyForUser).toHaveBeenCalledWith(
         "u1",
+        expect.objectContaining({
+          order: "desc",
+          today: expect.any(Date) as Date
+        }),
         10,
         10
       );
@@ -133,6 +141,38 @@ describe("TripsService", () => {
         items: [tripResponse, { ...tripResponse, role: "VIEWER" }],
         meta: { page: 2, limit: 10, total: 21, totalPages: 3 }
       });
+    });
+  });
+
+  describe("findAll filters", () => {
+    it("should pass filters and use the client's local date", async () => {
+      mockTripsRepository.findManyForUser.mockResolvedValue({
+        items: [],
+        total: 0
+      });
+
+      await service.findAll("u1", {
+        page: 1,
+        limit: 20,
+        q: "bali",
+        status: "upcoming",
+        role: "shared",
+        order: "asc",
+        today: "2026-11-30"
+      });
+
+      expect(mockTripsRepository.findManyForUser).toHaveBeenCalledWith(
+        "u1",
+        {
+          q: "bali",
+          status: "upcoming",
+          role: "shared",
+          order: "asc",
+          today: new Date("2026-11-30T00:00:00.000Z")
+        },
+        0,
+        20
+      );
     });
   });
 

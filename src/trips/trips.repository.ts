@@ -10,6 +10,14 @@ export type TripWithMembership = Prisma.TripGetPayload<{
   include: { members: { select: { role: true } } };
 }>;
 
+export type TripListFilter = {
+  q?: string;
+  status?: "upcoming" | "ongoing" | "past";
+  role?: "owner" | "shared";
+  order: "asc" | "desc";
+  today: Date;
+};
+
 /**
  * Trips the user owns or is a member of
  */
@@ -58,23 +66,50 @@ export class TripsRepository {
   }
 
   /**
-   * List trips the user owns or is a member of,
-   * ordered by start date (newest first).
+   * List trips the user owns or is a member of, filtered and
+   * ordered by start date.
    *
    * @returns Page of trips and total count
    */
   async findManyForUser(
     userId: string,
+    filter: TripListFilter,
     skip: number,
     take: number
   ): Promise<{ items: TripWithMembership[]; total: number }> {
-    const where = accessibleBy(userId);
+    const { q, status, role, order, today } = filter;
+
+    const where: Prisma.TripWhereInput = {
+      AND: [
+        role === "owner"
+          ? { userId }
+          : role === "shared"
+            ? { members: { some: { userId } } }
+            : accessibleBy(userId),
+        // MySQL collation makes contains case-insensitive
+        ...(q
+          ? [
+              {
+                OR: [
+                  { title: { contains: q } },
+                  { destination: { contains: q } }
+                ]
+              }
+            ]
+          : []),
+        ...(status === "upcoming" ? [{ startDate: { gt: today } }] : []),
+        ...(status === "ongoing"
+          ? [{ startDate: { lte: today }, endDate: { gte: today } }]
+          : []),
+        ...(status === "past" ? [{ endDate: { lt: today } }] : [])
+      ]
+    };
 
     const [items, total] = await this.prisma.$transaction([
       this.prisma.trip.findMany({
         where,
         include: membershipOf(userId),
-        orderBy: [{ startDate: "desc" }, { createdAt: "desc" }],
+        orderBy: [{ startDate: order }, { createdAt: order }],
         skip,
         take
       }),

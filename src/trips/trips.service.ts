@@ -78,10 +78,12 @@ export class TripsService {
     userId: string,
     query: ListTripsQuery
   ): Promise<TripListResponse> {
-    const { page, limit } = query;
+    const { page, limit, q, status, role, order } = query;
+    const today = toDate(query.today ?? toDateString(new Date()));
 
     const { items, total } = await this.tripsRepository.findManyForUser(
       userId,
+      { q, status, role, order, today },
       (page - 1) * limit,
       limit
     );

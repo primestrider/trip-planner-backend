@@ -50,19 +50,29 @@ describe("UpdateTripSchema", () => {
 
 describe("ListTripsQuerySchema", () => {
   it("should apply defaults and coerce strings", () => {
-    expect(ListTripsQuerySchema.parse({})).toEqual({ page: 1, limit: 20 });
+    expect(ListTripsQuerySchema.parse({})).toEqual({
+      page: 1,
+      limit: 20,
+      order: "desc"
+    });
     expect(ListTripsQuerySchema.parse({ page: "2", limit: "5" })).toEqual({
       page: 2,
-      limit: 5
+      limit: 5,
+      order: "desc"
     });
   });
 
-  it.each([{ page: "0" }, { limit: "101" }, { page: "abc" }])(
-    "should reject %j",
-    (input) => {
-      expect(ListTripsQuerySchema.safeParse(input).success).toBe(false);
-    }
-  );
+  it.each([
+    { page: "0" },
+    { limit: "101" },
+    { page: "abc" },
+    { status: "soon" },
+    { role: "admin" },
+    { order: "up" },
+    { today: "30-11-2026" }
+  ])("should reject %j", (input) => {
+    expect(ListTripsQuerySchema.safeParse(input).success).toBe(false);
+  });
 });
 
 describe("CreateTripSchema budget", () => {
