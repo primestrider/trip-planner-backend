@@ -2,6 +2,7 @@ import { Global, MiddlewareConsumer, Module, NestModule } from "@nestjs/common";
 import { APP_FILTER } from "@nestjs/core";
 import { AllExceptionsFilter } from "./filters/all-exceptions.filter";
 import { RequestContextMiddleware } from "./middleware/request-context.middleware";
+import { validateEnv } from "./config/env.validation";
 import { WinstonModule } from "nest-winston";
 import winston from "winston";
 import { ConfigModule } from "@nestjs/config";
@@ -38,7 +39,9 @@ import { ValidationService } from "./validation/validation.service";
      * Global configuration module for loading environment variables.
      */
     ConfigModule.forRoot({
-      isGlobal: true
+      isGlobal: true,
+      // fail fast on missing or weak settings
+      validate: validateEnv
     })
   ],
 
