@@ -4,12 +4,18 @@ import {
   Injectable,
   NotFoundException
 } from "@nestjs/common";
-import { ItineraryItem, Trip } from "@prisma/client";
+import {
+  ItineraryItem,
+  Trip,
+  TripAccommodation,
+  TripTransport
+} from "@prisma/client";
 import { WINSTON_MODULE_PROVIDER } from "nest-winston";
 import { Logger } from "winston";
 import { TripAccessService } from "../trip-access.service";
 import { ItineraryRepository } from "./itinerary.repository";
 import {
+  AccommodationEvent,
   ItineraryDayResponse,
   ItineraryItemResponse,
   ItineraryResponse
@@ -20,6 +26,16 @@ import {
 } from "./itinerary.validation";
 import { addDays, countDaysInclusive, toDateString } from "src/utils/date";
 import { toLocationColumns, toLocationResponse } from "../location";
+import { AccommodationsRepository } from "../accommodations/accommodations.repository";
+import { toAccommodationResponse } from "../accommodations/accommodations.service";
+import { TransportsRepository } from "../transports/transports.repository";
+import { toTransportResponse } from "../transports/transports.service";
+
+const EVENT_ORDER: Record<AccommodationEvent, number> = {
+  CHECK_OUT: 0,
+  STAY: 1,
+  CHECK_IN: 2
+};
 
 /**
  * ItineraryService manages the day-by-day plan of a trip.
@@ -32,6 +48,8 @@ export class ItineraryService {
   constructor(
     private readonly tripAccess: TripAccessService,
     private readonly itineraryRepository: ItineraryRepository,
+    private readonly accommodationsRepository: AccommodationsRepository,
+    private readonly transportsRepository: TransportsRepository,
     @Inject(WINSTON_MODULE_PROVIDER)
     private readonly logger: Logger
   ) {}
@@ -88,6 +106,59 @@ export class ItineraryService {
   }
 
   /**
+   * Build one day: its itinerary items plus the accommodations and
+   * transports that fall on its date.
+   *
+   * @param items items of this day, already ordered
+   */
+  private buildDay(
+    trip: Trip,
+    dayNumber: number,
+    items: ItineraryItem[],
+    accommodations: TripAccommodation[],
+    transports: TripTransport[]
+  ): ItineraryDayResponse {
+    const date = this.dayDate(trip, dayNumber);
+
+    const stays = accommodations
+      .flatMap((accommodation) => {
+        const checkIn = toDateString(accommodation.checkInDate);
+        const checkOut = toDateString(accommodation.checkOutDate);
+
+        if (date < checkIn || date > checkOut) {
+          return [];
+        }
+
+        const event: AccommodationEvent =
+          date === checkIn
+            ? "CHECK_IN"
+            : date === checkOut
+              ? "CHECK_OUT"
+              : "STAY";
+
+        return [
+          { event, accommodation: toAccommodationResponse(accommodation) }
+        ];
+      })
+      .sort((a, b) => EVENT_ORDER[a.event] - EVENT_ORDER[b.event]);
+
+    const moves = transports.filter(
+      (transport) =>
+        toDateString(transport.departureAt) === date ||
+        (transport.arrivalAt !== null &&
+          toDateString(transport.arrivalAt) === date)
+    );
+
+    return {
+      dayNumber,
+      date,
+      items: items.map((item) => this.toItemResponse(item)),
+      accommodations: stays,
+      transports: moves.map((transport) => toTransportResponse(transport))
+    };
+  }
+
+  /**
    * Full itinerary grouped per day, including days without items.
    */
   async getItinerary(
@@ -95,21 +166,22 @@ export class ItineraryService {
     tripId: string
   ): Promise<ItineraryResponse> {
     const { trip } = await this.tripAccess.getTrip(userId, tripId);
-    const items = await this.itineraryRepository.findManyByTrip(trip.id);
+    const [items, accommodations, transports] = await Promise.all([
+      this.itineraryRepository.findManyByTrip(trip.id),
+      this.accommodationsRepository.findManyByTrip(trip.id),
+      this.transportsRepository.findManyByTrip(trip.id)
+    ]);
     const totalDays = this.totalDays(trip);
 
-    const days: ItineraryDayResponse[] = Array.from(
-      { length: totalDays },
-      (_, index) => ({
-        dayNumber: index + 1,
-        date: this.dayDate(trip, index + 1),
-        items: []
-      })
+    const days = Array.from({ length: totalDays }, (_, index) =>
+      this.buildDay(
+        trip,
+        index + 1,
+        items.filter((item) => item.dayNumber === index + 1),
+        accommodations,
+        transports
+      )
     );
-
-    for (const item of items) {
-      days[item.dayNumber - 1]?.items.push(this.toItemResponse(item));
-    }
 
     return {
       tripId: trip.id,
@@ -131,16 +203,13 @@ export class ItineraryService {
     const { trip } = await this.tripAccess.getTrip(userId, tripId);
     this.ensureDayInTrip(trip, dayNumber);
 
-    const items = await this.itineraryRepository.findManyByTripAndDay(
-      trip.id,
-      dayNumber
-    );
+    const [items, accommodations, transports] = await Promise.all([
+      this.itineraryRepository.findManyByTripAndDay(trip.id, dayNumber),
+      this.accommodationsRepository.findManyByTrip(trip.id),
+      this.transportsRepository.findManyByTrip(trip.id)
+    ]);
 
-    return {
-      dayNumber,
-      date: this.dayDate(trip, dayNumber),
-      items: items.map((item) => this.toItemResponse(item))
-    };
+    return this.buildDay(trip, dayNumber, items, accommodations, transports);
   }
 
   async createItem(

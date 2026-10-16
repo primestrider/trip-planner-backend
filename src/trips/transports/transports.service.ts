@@ -13,6 +13,30 @@ import {
 import { toLocalDateTime, toLocalDateTimeString } from "src/utils/date";
 
 /**
+ * Map a stored transport to its API response
+ */
+export function toTransportResponse(
+  transport: TripTransport
+): TransportResponse {
+  return {
+    id: transport.id,
+    type: transport.type,
+    carrier: transport.carrier,
+    number: transport.number,
+    origin: toLocationResponse(transport, "origin"),
+    destination: toLocationResponse(transport, "destination"),
+    departureAt: toLocalDateTimeString(transport.departureAt),
+    arrivalAt: transport.arrivalAt
+      ? toLocalDateTimeString(transport.arrivalAt)
+      : null,
+    bookingCode: transport.bookingCode,
+    notes: transport.notes,
+    createdAt: transport.createdAt,
+    updatedAt: transport.updatedAt
+  };
+}
+
+/**
  * TransportsService manages how travelers move during a trip
  * (flights, trains, rentals, ...).
  * Any member can read; EDITOR or OWNER can change.
@@ -25,25 +49,6 @@ export class TransportsService {
     @Inject(WINSTON_MODULE_PROVIDER)
     private readonly logger: Logger
   ) {}
-
-  private toResponse(transport: TripTransport): TransportResponse {
-    return {
-      id: transport.id,
-      type: transport.type,
-      carrier: transport.carrier,
-      number: transport.number,
-      origin: toLocationResponse(transport, "origin"),
-      destination: toLocationResponse(transport, "destination"),
-      departureAt: toLocalDateTimeString(transport.departureAt),
-      arrivalAt: transport.arrivalAt
-        ? toLocalDateTimeString(transport.arrivalAt)
-        : null,
-      bookingCode: transport.bookingCode,
-      notes: transport.notes,
-      createdAt: transport.createdAt,
-      updatedAt: transport.updatedAt
-    };
-  }
 
   /**
    * @throws NotFoundException if transport does not belong to the trip
@@ -68,7 +73,7 @@ export class TransportsService {
     const { trip } = await this.tripAccess.getTrip(userId, tripId);
     const transports = await this.transportsRepository.findManyByTrip(trip.id);
 
-    return transports.map((transport) => this.toResponse(transport));
+    return transports.map((transport) => toTransportResponse(transport));
   }
 
   async findOne(
@@ -77,7 +82,7 @@ export class TransportsService {
     transportId: string
   ): Promise<TransportResponse> {
     const { trip } = await this.tripAccess.getTrip(userId, tripId);
-    return this.toResponse(await this.findTransport(trip.id, transportId));
+    return toTransportResponse(await this.findTransport(trip.id, transportId));
   }
 
   async create(
@@ -106,7 +111,7 @@ export class TransportsService {
       transportId: transport.id
     });
 
-    return this.toResponse(transport);
+    return toTransportResponse(transport);
   }
 
   async update(
@@ -141,7 +146,7 @@ export class TransportsService {
 
     this.logger.info("Transport updated", { userId, tripId, transportId });
 
-    return this.toResponse(updated);
+    return toTransportResponse(updated);
   }
 
   async remove(

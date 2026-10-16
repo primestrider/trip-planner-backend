@@ -18,6 +18,30 @@ import {
 import { countDaysInclusive, toDate, toDateString } from "src/utils/date";
 
 /**
+ * Map a stored accommodation to its API response
+ */
+export function toAccommodationResponse(
+  accommodation: TripAccommodation
+): AccommodationResponse {
+  return {
+    id: accommodation.id,
+    name: accommodation.name,
+    location: toLocationResponse(accommodation),
+    checkInDate: toDateString(accommodation.checkInDate),
+    checkOutDate: toDateString(accommodation.checkOutDate),
+    nights:
+      countDaysInclusive(
+        accommodation.checkInDate,
+        accommodation.checkOutDate
+      ) - 1,
+    bookingCode: accommodation.bookingCode,
+    notes: accommodation.notes,
+    createdAt: accommodation.createdAt,
+    updatedAt: accommodation.updatedAt
+  };
+}
+
+/**
  * AccommodationsService manages where travelers stay during a trip.
  * Any member can read; EDITOR or OWNER can change.
  */
@@ -29,25 +53,6 @@ export class AccommodationsService {
     @Inject(WINSTON_MODULE_PROVIDER)
     private readonly logger: Logger
   ) {}
-
-  private toResponse(accommodation: TripAccommodation): AccommodationResponse {
-    return {
-      id: accommodation.id,
-      name: accommodation.name,
-      location: toLocationResponse(accommodation),
-      checkInDate: toDateString(accommodation.checkInDate),
-      checkOutDate: toDateString(accommodation.checkOutDate),
-      nights:
-        countDaysInclusive(
-          accommodation.checkInDate,
-          accommodation.checkOutDate
-        ) - 1,
-      bookingCode: accommodation.bookingCode,
-      notes: accommodation.notes,
-      createdAt: accommodation.createdAt,
-      updatedAt: accommodation.updatedAt
-    };
-  }
 
   /**
    * @throws NotFoundException if accommodation does not belong to the trip
@@ -75,7 +80,7 @@ export class AccommodationsService {
     );
 
     return accommodations.map((accommodation) =>
-      this.toResponse(accommodation)
+      toAccommodationResponse(accommodation)
     );
   }
 
@@ -85,7 +90,7 @@ export class AccommodationsService {
     accommodationId: string
   ): Promise<AccommodationResponse> {
     const { trip } = await this.tripAccess.getTrip(userId, tripId);
-    return this.toResponse(
+    return toAccommodationResponse(
       await this.findAccommodation(trip.id, accommodationId)
     );
   }
@@ -113,7 +118,7 @@ export class AccommodationsService {
       accommodationId: accommodation.id
     });
 
-    return this.toResponse(accommodation);
+    return toAccommodationResponse(accommodation);
   }
 
   /**
@@ -171,7 +176,7 @@ export class AccommodationsService {
       accommodationId
     });
 
-    return this.toResponse(updated);
+    return toAccommodationResponse(updated);
   }
 
   async remove(

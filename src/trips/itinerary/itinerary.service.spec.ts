@@ -8,6 +8,12 @@ import { WINSTON_MODULE_PROVIDER } from "nest-winston";
 import { ItineraryService } from "./itinerary.service";
 import { ItineraryRepository } from "./itinerary.repository";
 import { TripAccessService } from "../trip-access.service";
+import { AccommodationsRepository } from "../accommodations/accommodations.repository";
+import { TransportsRepository } from "../transports/transports.repository";
+import { toLocationColumns } from "../location";
+
+const mockAccommodationsRepository = { findManyByTrip: jest.fn() };
+const mockTransportsRepository = { findManyByTrip: jest.fn() };
 
 const mockTripAccess = {
   getTrip: jest.fn()
@@ -67,12 +73,97 @@ describe("ItineraryService", () => {
         ItineraryService,
         { provide: TripAccessService, useValue: mockTripAccess },
         { provide: ItineraryRepository, useValue: mockItineraryRepository },
+        {
+          provide: AccommodationsRepository,
+          useValue: mockAccommodationsRepository
+        },
+        { provide: TransportsRepository, useValue: mockTransportsRepository },
         { provide: WINSTON_MODULE_PROVIDER, useValue: mockLogger }
       ]
     }).compile();
 
     service = module.get<ItineraryService>(ItineraryService);
     mockTripAccess.getTrip.mockResolvedValue({ trip, role: "OWNER" });
+    mockAccommodationsRepository.findManyByTrip.mockResolvedValue([]);
+    mockTransportsRepository.findManyByTrip.mockResolvedValue([]);
+  });
+
+  describe("accommodations and transports per day", () => {
+    // trip days: 2026-11-30, 2026-12-01, 2026-12-02
+    const stay = (id: string, checkIn: string, checkOut: string) => ({
+      id,
+      tripId: "t1",
+      name: id,
+      ...toLocationColumns(null),
+      checkInDate: new Date(`${checkIn}T00:00:00.000Z`),
+      checkOutDate: new Date(`${checkOut}T00:00:00.000Z`),
+      bookingCode: null,
+      notes: null,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+
+    const move = (id: string, departure: string, arrival: string | null) => ({
+      id,
+      tripId: "t1",
+      type: "FLIGHT",
+      carrier: null,
+      number: null,
+      ...toLocationColumns({ name: "A" }, "origin"),
+      ...toLocationColumns({ name: "B" }, "destination"),
+      departureAt: new Date(`${departure}:00.000Z`),
+      arrivalAt: arrival ? new Date(`${arrival}:00.000Z`) : null,
+      bookingCode: null,
+      notes: null,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+
+    it("should place stays and transports on the right days", async () => {
+      mockItineraryRepository.findManyByTrip.mockResolvedValue([]);
+      mockAccommodationsRepository.findManyByTrip.mockResolvedValue([
+        stay("hotel-a", "2026-11-30", "2026-12-01"),
+        stay("hotel-b", "2026-12-01", "2026-12-03")
+      ]);
+      mockTransportsRepository.findManyByTrip.mockResolvedValue([
+        move("arrive", "2026-11-30T09:00", "2026-11-30T12:00"),
+        // overnight: departs day 2, arrives day 3
+        move("night-bus", "2026-12-01T22:00", "2026-12-02T06:00")
+      ]);
+
+      const { days } = await service.getItinerary("u1", "t1");
+
+      const summary = days.map((day) => [
+        day.date,
+        day.accommodations.map((a) => `${a.accommodation.name}:${a.event}`),
+        day.transports.map((t) => t.id)
+      ]);
+
+      expect(summary).toEqual([
+        ["2026-11-30", ["hotel-a:CHECK_IN"], ["arrive"]],
+        // check-out listed before check-in on a hotel change day
+        [
+          "2026-12-01",
+          ["hotel-a:CHECK_OUT", "hotel-b:CHECK_IN"],
+          ["night-bus"]
+        ],
+        ["2026-12-02", ["hotel-b:STAY"], ["night-bus"]]
+      ]);
+    });
+
+    it("should include stays and transports for a single day", async () => {
+      mockItineraryRepository.findManyByTripAndDay.mockResolvedValue([]);
+      mockAccommodationsRepository.findManyByTrip.mockResolvedValue([
+        stay("hotel-b", "2026-12-01", "2026-12-03")
+      ]);
+
+      const day = await service.getDay("u1", "t1", 3);
+
+      expect(day.accommodations).toEqual([
+        expect.objectContaining({ event: "STAY" })
+      ]);
+      expect(day.transports).toEqual([]);
+    });
   });
 
   it("should propagate NotFoundException when trip is not owned", async () => {
