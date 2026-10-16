@@ -5,8 +5,10 @@ import {
   CallHandler,
   BadRequestException
 } from "@nestjs/common";
+import { Reflector } from "@nestjs/core";
 import { Observable } from "rxjs";
 import { Request } from "express";
+import { SKIP_DEVICE_ID_KEY } from "../decorator/skip-device-id.decorator";
 
 /**
  * DeviceIdInterceptor is a global interceptor responsible for
@@ -41,6 +43,8 @@ import { Request } from "express";
  */
 @Injectable()
 export class DeviceIdInterceptor implements NestInterceptor {
+  constructor(private readonly reflector: Reflector) {}
+
   /**
    * Intercepts incoming HTTP requests to extract and validate the device identifier.
    *
@@ -49,6 +53,15 @@ export class DeviceIdInterceptor implements NestInterceptor {
    * @returns Observable wrapping the downstream request handling
    */
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
+    const skip = this.reflector.getAllAndOverride<boolean>(SKIP_DEVICE_ID_KEY, [
+      context.getHandler(),
+      context.getClass()
+    ]);
+
+    if (skip) {
+      return next.handle();
+    }
+
     const req = context.switchToHttp().getRequest<Request>();
 
     const deviceId = req.headers["x-device-id"];

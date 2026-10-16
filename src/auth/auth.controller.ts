@@ -6,6 +6,7 @@ import {
   Post,
   UseGuards
 } from "@nestjs/common";
+import { Throttle } from "@nestjs/throttler";
 import { AuthService } from "./auth.service";
 import { ValidationPipe } from "src/common/validation/validation.pipe";
 import {
@@ -21,7 +22,12 @@ import { RefreshTokenGuard } from "./guards/refresh-token.guard";
 import { CurrentUser } from "src/common/decorator/current-user.decorator";
 import { AccessTokenGuard } from "./guards/access-token.guard";
 
+/**
+ * Stricter rate limit against credential stuffing / brute force:
+ * 10 requests per minute per client IP for every auth route.
+ */
 @Controller("authentication")
+@Throttle({ default: { limit: 10, ttl: 60_000 } })
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
