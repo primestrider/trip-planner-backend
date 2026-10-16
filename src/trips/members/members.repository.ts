@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { Prisma, TripMember, TripMemberRole } from "@prisma/client";
+import { Prisma, Trip, TripMember, TripMemberRole } from "@prisma/client";
 import { PrismaService } from "src/common/prisma.service";
 
 /**
@@ -44,6 +44,21 @@ export class MembersRepository {
       include: { user: { select: memberUserSelect } },
       orderBy: { createdAt: "asc" }
     });
+  }
+
+  /**
+   * Owner and member ids of a trip: everyone who can pay, share costs,
+   * or be assigned tasks on it.
+   */
+  async findParticipantIds(
+    trip: Pick<Trip, "id" | "userId">
+  ): Promise<string[]> {
+    const members = await this.prisma.tripMember.findMany({
+      where: { tripId: trip.id },
+      select: { userId: true }
+    });
+
+    return [trip.userId, ...members.map((member) => member.userId)];
   }
 
   async findByTripAndUser(

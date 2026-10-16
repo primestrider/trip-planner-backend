@@ -25,7 +25,7 @@ const mockExpensesRepository = {
   delete: jest.fn()
 };
 
-const mockMembersRepository = { findManyByTrip: jest.fn() };
+const mockMembersRepository = { findParticipantIds: jest.fn() };
 
 // trip members besides the owner
 const MEMBER = "f7b3c1a2-0000-4000-8000-000000000001";
@@ -82,8 +82,9 @@ describe("ExpensesService", () => {
 
     service = module.get<ExpensesService>(ExpensesService);
     mockTripAccess.getTrip.mockResolvedValue({ trip, role: "OWNER" });
-    mockMembersRepository.findManyByTrip.mockResolvedValue([
-      { userId: MEMBER }
+    mockMembersRepository.findParticipantIds.mockResolvedValue([
+      "owner",
+      MEMBER
     ]);
   });
 
@@ -179,7 +180,7 @@ describe("ExpensesService", () => {
         { amount: 99 },
         [{ userId: "owner", amount: 99 }]
       );
-      expect(mockMembersRepository.findManyByTrip).not.toHaveBeenCalled();
+      expect(mockMembersRepository.findParticipantIds).not.toHaveBeenCalled();
     });
 
     it("should keep the split when only the title changes", async () => {

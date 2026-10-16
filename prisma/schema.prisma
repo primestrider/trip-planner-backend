@@ -30,11 +30,13 @@ model User {
   avatarId Int?
   avatar   Avatar? @relation(fields: [avatarId], references: [id])
 
-  accessTokens    UserAccessToken[]
-  trips           Trip[]
-  tripMemberships TripMember[]
-  paidExpenses    TripExpense[]
-  expenseShares   TripExpenseShare[]
+  accessTokens           UserAccessToken[]
+  trips                  Trip[]
+  tripMemberships        TripMember[]
+  paidExpenses           TripExpense[]
+  expenseShares          TripExpenseShare[]
+  assignedChecklistItems TripChecklistItem[] @relation("ChecklistAssignee")
+  checkedChecklistItems  TripChecklistItem[] @relation("ChecklistCheckedBy")
 
   createdAt DateTime  @default(now()) @db.Timestamp(0)
   updatedAt DateTime  @updatedAt @db.Timestamp(0)
@@ -100,6 +102,7 @@ model Trip {
   transports     TripTransport[]
   expenses       TripExpense[]
   invites        TripInvite[]
+  checklistItems TripChecklistItem[]
 
   createdAt DateTime @default(now()) @db.Timestamp(0)
   updatedAt DateTime @updatedAt @db.Timestamp(0)
@@ -316,4 +319,33 @@ model TripExpenseShare {
   @@id([expenseId, userId])
   @@index([userId])
   @@map("trip_expense_shares")
+}
+
+// Packing list / to-do item of a trip
+model TripChecklistItem {
+  id String @id @default(uuid())
+
+  tripId String
+  trip   Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  title    String  @db.VarChar(200)
+  // free-form group, e.g. "Documents", "Clothes"
+  category String? @db.VarChar(50)
+
+  // trip member responsible for the item
+  assignedToUserId String?
+  assignedTo       User?   @relation("ChecklistAssignee", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+
+  isChecked       Boolean   @default(false)
+  checkedAt       DateTime? @db.Timestamp(0)
+  checkedByUserId String?
+  checkedBy       User?     @relation("ChecklistCheckedBy", fields: [checkedByUserId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @db.Timestamp(0)
+  updatedAt DateTime @updatedAt @db.Timestamp(0)
+
+  @@index([tripId, isChecked])
+  @@index([assignedToUserId])
+  @@index([checkedByUserId])
+  @@map("trip_checklist_items")
 }

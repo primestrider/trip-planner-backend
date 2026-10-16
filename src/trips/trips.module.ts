@@ -25,6 +25,9 @@ import {
 } from "./invites/invites.controller";
 import { InvitesService } from "./invites/invites.service";
 import { InvitesRepository } from "./invites/invites.repository";
+import { ChecklistController } from "./checklist/checklist.controller";
+import { ChecklistService } from "./checklist/checklist.service";
+import { ChecklistRepository } from "./checklist/checklist.repository";
 
 @Module({
   imports: [UsersModule],
@@ -36,7 +39,8 @@ import { InvitesRepository } from "./invites/invites.repository";
     TransportsController,
     ExpensesController,
     TripInvitesController,
-    InvitesController
+    InvitesController,
+    ChecklistController
   ],
   providers: [
     TripsService,
@@ -53,7 +57,9 @@ import { InvitesRepository } from "./invites/invites.repository";
     ExpensesService,
     ExpensesRepository,
     InvitesService,
-    InvitesRepository
+    InvitesRepository,
+    ChecklistService,
+    ChecklistRepository
   ]
 })
 export class TripsModule {}

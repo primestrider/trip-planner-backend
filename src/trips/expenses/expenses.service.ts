@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException
 } from "@nestjs/common";
-import { Prisma, Trip } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { WINSTON_MODULE_PROVIDER } from "nest-winston";
 import { Logger } from "winston";
 import { TripAccessService } from "../trip-access.service";
@@ -69,14 +69,6 @@ export class ExpensesService {
       createdAt: expense.createdAt,
       updatedAt: expense.updatedAt
     };
-  }
-
-  /**
-   * Owner and members of the trip, i.e. who can pay or share an expense
-   */
-  private async participantIds(trip: Trip): Promise<string[]> {
-    const members = await this.membersRepository.findManyByTrip(trip.id);
-    return [trip.userId, ...members.map((member) => member.userId)];
   }
 
   /**
@@ -154,7 +146,7 @@ export class ExpensesService {
   ): Promise<ExpenseResponse> {
     const { trip } = await this.tripAccess.getTrip(userId, tripId, "EDITOR");
 
-    const participants = await this.participantIds(trip);
+    const participants = await this.membersRepository.findParticipantIds(trip);
 
     // default payer is the user recording the expense
     const paidByUserId =
@@ -212,7 +204,7 @@ export class ExpensesService {
       payload.splitAmong !== undefined ||
       (payload.amount !== undefined && expense.shares.length === 0);
     const participants = needsParticipants
-      ? await this.participantIds(trip)
+      ? await this.membersRepository.findParticipantIds(trip)
       : [];
 
     if (payload.paidByUserId) {
@@ -344,7 +336,7 @@ export class ExpensesService {
     const { trip } = await this.tripAccess.getTrip(userId, tripId);
     const [expenses, participants] = await Promise.all([
       this.expensesRepository.findForSettlement(trip.id),
-      this.participantIds(trip)
+      this.membersRepository.findParticipantIds(trip)
     ]);
 
     const paid = new Map<string, number>();
