@@ -33,6 +33,7 @@ model User {
   accessTokens    UserAccessToken[]
   trips           Trip[]
   tripMemberships TripMember[]
+  paidExpenses    TripExpense[]
 
   createdAt DateTime  @default(now()) @db.Timestamp(0)
   updatedAt DateTime  @updatedAt @db.Timestamp(0)
@@ -88,10 +89,15 @@ model Trip {
   startDate DateTime @db.Date
   endDate   DateTime @db.Date
 
+  // ISO 4217 currency for budget and expenses
+  currency     String   @default("IDR") @db.Char(3)
+  budgetAmount Decimal? @db.Decimal(14, 2)
+
   itineraryItems ItineraryItem[]
   members        TripMember[]
   accommodations TripAccommodation[]
   transports     TripTransport[]
+  expenses       TripExpense[]
 
   createdAt DateTime @default(now()) @db.Timestamp(0)
   updatedAt DateTime @updatedAt @db.Timestamp(0)
@@ -231,4 +237,40 @@ model TripTransport {
 
   @@index([tripId, departureAt])
   @@map("trip_transports")
+}
+
+enum ExpenseCategory {
+  ACCOMMODATION
+  TRANSPORT
+  FOOD
+  ACTIVITY
+  SHOPPING
+  OTHER
+}
+
+model TripExpense {
+  id String @id @default(uuid())
+
+  tripId String
+  trip   Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  category ExpenseCategory
+  title    String          @db.VarChar(150)
+  // in trip currency
+  amount   Decimal         @db.Decimal(14, 2)
+
+  spentDate DateTime? @db.Date
+
+  // trip member who paid; kept as null if that user is deleted
+  paidByUserId String?
+  paidBy       User?   @relation(fields: [paidByUserId], references: [id], onDelete: SetNull)
+
+  notes String? @db.Text
+
+  createdAt DateTime @default(now()) @db.Timestamp(0)
+  updatedAt DateTime @updatedAt @db.Timestamp(0)
+
+  @@index([tripId, spentDate])
+  @@index([paidByUserId])
+  @@map("trip_expenses")
 }

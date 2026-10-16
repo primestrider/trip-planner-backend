@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AmountSchema, CurrencySchema } from "./money";
 
 const dateRangeMessage = {
   path: ["endDate"],
@@ -15,7 +16,13 @@ const TripFields = z.object({
   // Date only, format YYYY-MM-DD
   startDate: z.iso.date(),
 
-  endDate: z.iso.date()
+  endDate: z.iso.date(),
+
+  // defaults to IDR
+  currency: CurrencySchema.optional(),
+
+  // planned total budget in trip currency
+  budgetAmount: AmountSchema.nullable().optional()
 });
 
 export const CreateTripSchema = TripFields.strict().refine(

@@ -64,3 +64,24 @@ describe("ListTripsQuerySchema", () => {
     }
   );
 });
+
+describe("CreateTripSchema budget", () => {
+  it("should normalize currency and accept budget", () => {
+    expect(
+      CreateTripSchema.parse({
+        ...validTrip,
+        currency: " usd ",
+        budgetAmount: 1500.25
+      })
+    ).toMatchObject({ currency: "USD", budgetAmount: 1500.25 });
+  });
+
+  it.each([
+    { ...validTrip, currency: "RUPIAH" },
+    { ...validTrip, currency: "U1" },
+    { ...validTrip, budgetAmount: -1 },
+    { ...validTrip, budgetAmount: 10.001 }
+  ])("should reject %j", (input) => {
+    expect(CreateTripSchema.safeParse(input).success).toBe(false);
+  });
+});

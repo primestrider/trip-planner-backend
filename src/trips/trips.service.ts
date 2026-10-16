@@ -17,6 +17,7 @@ import {
 } from "./trips.validation";
 import { ItineraryRepository } from "./itinerary/itinerary.repository";
 import { countDaysInclusive, toDate, toDateString } from "src/utils/date";
+import { toAmount } from "./money";
 
 /**
  * TripsService contains business logic for managing trips
@@ -40,6 +41,8 @@ export class TripsService {
       description: trip.description,
       startDate: toDateString(trip.startDate),
       endDate: toDateString(trip.endDate),
+      currency: trip.currency,
+      budgetAmount: toAmount(trip.budgetAmount),
       role,
       createdAt: trip.createdAt,
       updatedAt: trip.updatedAt
@@ -53,7 +56,9 @@ export class TripsService {
       destination: payload.destination,
       description: payload.description ?? null,
       startDate: toDate(payload.startDate),
-      endDate: toDate(payload.endDate)
+      endDate: toDate(payload.endDate),
+      ...(payload.currency !== undefined && { currency: payload.currency }),
+      budgetAmount: payload.budgetAmount ?? null
     });
 
     this.logger.info("Trip created", { userId, tripId: trip.id });
@@ -141,6 +146,10 @@ export class TripsService {
       }),
       ...(payload.endDate !== undefined && {
         endDate: toDate(payload.endDate)
+      }),
+      ...(payload.currency !== undefined && { currency: payload.currency }),
+      ...(payload.budgetAmount !== undefined && {
+        budgetAmount: payload.budgetAmount
       })
     });
 

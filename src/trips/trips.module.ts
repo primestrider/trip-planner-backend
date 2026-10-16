@@ -16,6 +16,9 @@ import { AccommodationsRepository } from "./accommodations/accommodations.reposi
 import { TransportsController } from "./transports/transports.controller";
 import { TransportsService } from "./transports/transports.service";
 import { TransportsRepository } from "./transports/transports.repository";
+import { ExpensesController } from "./expenses/expenses.controller";
+import { ExpensesService } from "./expenses/expenses.service";
+import { ExpensesRepository } from "./expenses/expenses.repository";
 
 @Module({
   imports: [UsersModule],
@@ -24,7 +27,8 @@ import { TransportsRepository } from "./transports/transports.repository";
     ItineraryController,
     MembersController,
     AccommodationsController,
-    TransportsController
+    TransportsController,
+    ExpensesController
   ],
   providers: [
     TripsService,
@@ -37,7 +41,9 @@ import { TransportsRepository } from "./transports/transports.repository";
     AccommodationsService,
     AccommodationsRepository,
     TransportsService,
-    TransportsRepository
+    TransportsRepository,
+    ExpensesService,
+    ExpensesRepository
   ]
 })
 export class TripsModule {}

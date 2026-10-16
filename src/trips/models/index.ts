@@ -11,6 +11,8 @@ export type TripResponse = {
   description: string | null;
   startDate: string;
   endDate: string;
+  currency: string;
+  budgetAmount: number | null;
   // role of the current user on this trip
   role: TripRole;
   createdAt: Date;

@@ -33,6 +33,8 @@ const trip = {
   description: null,
   startDate: new Date("2026-11-01T00:00:00.000Z"),
   endDate: new Date("2026-11-05T00:00:00.000Z"),
+  currency: "IDR",
+  budgetAmount: null,
   createdAt: new Date("2026-10-01T00:00:00.000Z"),
   updatedAt: new Date("2026-10-01T00:00:00.000Z")
 };
@@ -53,6 +55,8 @@ const tripResponse = {
   description: null,
   startDate: "2026-11-01",
   endDate: "2026-11-05",
+  currency: "IDR",
+  budgetAmount: null,
   role: "OWNER",
   createdAt: trip.createdAt,
   updatedAt: trip.updatedAt
@@ -95,7 +99,8 @@ describe("TripsService", () => {
         destination: "Bali, Indonesia",
         description: null,
         startDate: trip.startDate,
-        endDate: trip.endDate
+        endDate: trip.endDate,
+        budgetAmount: null
       });
       expect(result).toEqual(tripResponse);
       expect(result).not.toHaveProperty("userId");
