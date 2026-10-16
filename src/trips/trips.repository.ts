@@ -160,4 +160,13 @@ export class TripsRepository {
       }
     });
   }
+
+  /**
+   * Find a trip by its public share token.
+   *
+   * @returns Trip if sharing is on for that token, otherwise `null`
+   */
+  async findByShareToken(shareToken: string): Promise<Trip | null> {
+    return this.prisma.trip.findUnique({ where: { shareToken } });
+  }
 }

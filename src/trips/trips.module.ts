@@ -28,6 +28,11 @@ import { InvitesRepository } from "./invites/invites.repository";
 import { ChecklistController } from "./checklist/checklist.controller";
 import { ChecklistService } from "./checklist/checklist.service";
 import { ChecklistRepository } from "./checklist/checklist.repository";
+import {
+  SharedTripController,
+  TripShareController
+} from "./share/share.controller";
+import { ShareService } from "./share/share.service";
 
 @Module({
   imports: [UsersModule],
@@ -40,7 +45,9 @@ import { ChecklistRepository } from "./checklist/checklist.repository";
     ExpensesController,
     TripInvitesController,
     InvitesController,
-    ChecklistController
+    ChecklistController,
+    TripShareController,
+    SharedTripController
   ],
   providers: [
     TripsService,
@@ -59,7 +66,8 @@ import { ChecklistRepository } from "./checklist/checklist.repository";
     InvitesService,
     InvitesRepository,
     ChecklistService,
-    ChecklistRepository
+    ChecklistRepository,
+    ShareService
   ]
 })
 export class TripsModule {}

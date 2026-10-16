@@ -92,6 +92,9 @@ model Trip {
   // https image shown as the trip cover
   coverImageUrl String? @db.VarChar(2048)
 
+  // token of the public read-only link; null when sharing is off
+  shareToken String? @unique @db.VarChar(64)
+
   startDate DateTime @db.Date
   endDate   DateTime @db.Date
 

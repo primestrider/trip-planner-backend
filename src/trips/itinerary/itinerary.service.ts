@@ -167,6 +167,14 @@ export class ItineraryService {
     tripId: string
   ): Promise<ItineraryResponse> {
     const { trip } = await this.tripAccess.getTrip(userId, tripId);
+    return this.buildItinerary(trip);
+  }
+
+  /**
+   * Itinerary of a trip grouped per day. Does not check access;
+   * callers must have authorized reading the trip.
+   */
+  async buildItinerary(trip: Trip): Promise<ItineraryResponse> {
     const [items, accommodations, transports] = await Promise.all([
       this.itineraryRepository.findManyByTrip(trip.id),
       this.accommodationsRepository.findManyByTrip(trip.id),
