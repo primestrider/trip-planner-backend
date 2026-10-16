@@ -3,14 +3,18 @@ import { Injectable, UnauthorizedException } from "@nestjs/common";
 import { PassportStrategy } from "@nestjs/passport";
 import { ExtractJwt, Strategy } from "passport-jwt";
 import { ConfigService } from "@nestjs/config";
-import { JwtAccessPayload } from "../models";
+import { AccessTokenPayload, JwtAccessPayload } from "../models";
+import { UsersService } from "src/users/users.service";
 
 @Injectable()
 export class JwtAccessStrategy extends PassportStrategy(
   Strategy,
   "jwt-access"
 ) {
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly usersService: UsersService
+  ) {
     const secret = configService.get<string>("JWT_ACCESS_SECRET");
 
     if (!secret) {
@@ -23,20 +27,37 @@ export class JwtAccessStrategy extends PassportStrategy(
     });
   }
 
-  validate(payload: JwtAccessPayload) {
-    /**
-     * payload:
-     * {
-     *   sub: userId,
-     *   role: "USER",
-     *   iat,
-     *   exp
-     * }
-     */
+  /**
+   * Runs after the signature and expiry are verified.
+   *
+   * JWTs are stateless, so on their own they stay valid until they expire.
+   * Checking the user here lets the API reject tokens right away when the
+   * account is deleted or deactivated, or the password changed after the
+   * token was issued. The cost is one primary-key lookup per request.
+   *
+   * @returns the payload attached to `request.user`
+   * @throws UnauthorizedException
+   */
+  async validate(payload: JwtAccessPayload): Promise<AccessTokenPayload> {
     if (!payload?.sub) {
       throw new UnauthorizedException();
     }
 
-    return payload; // attach ke req.user
+    const user = await this.usersService.findActiveById(payload.sub);
+
+    if (!user) {
+      throw new UnauthorizedException("Account is no longer active");
+    }
+
+    if (
+      user.passwordChangedAt &&
+      payload.iat < Math.floor(user.passwordChangedAt.getTime() / 1000)
+    ) {
+      throw new UnauthorizedException(
+        "Password was changed; please sign in again"
+      );
+    }
+
+    return { sub: payload.sub, username: payload.username };
   }
 }

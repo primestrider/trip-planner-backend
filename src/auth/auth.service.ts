@@ -17,6 +17,7 @@ import { AuthRepository } from "./auth.repository";
 import {
   AccessTokenPayload,
   AuthUserResponse,
+  ChangePasswordContext,
   LoginContext,
   LogoutType,
   RegisterContext
@@ -137,6 +138,40 @@ export class AuthService {
   }
 
   /**
+   * Issue an access token and a refresh token for one device.
+   * The device's previous refresh token, if any, is replaced.
+   */
+  private async issueSession(
+    user: { id: string; username: string },
+    deviceId: string
+  ): Promise<AuthUserResponse> {
+    const payload: AccessTokenPayload = {
+      sub: user.id,
+      username: user.username
+    };
+
+    const accessToken = await this.generateAccessToken(payload);
+    const { token: refreshToken, expiresAt } =
+      await this.generateRefreshToken(payload);
+
+    // one refresh token per device
+    await this.authRepository.deleteTokenByUserAndDevice(user.id, deviceId);
+
+    await this.authRepository.create({
+      userId: user.id,
+      deviceId,
+      tokenHash: await bcrypt.hash(refreshToken, 10),
+      expiresAt
+    });
+
+    return {
+      user: { id: user.id, username: user.username },
+      accessToken,
+      refreshToken
+    };
+  }
+
+  /**
    * Register a new user and issue access & refresh tokens.
    *
    * @param request User registration payload (username and password)
@@ -160,38 +195,14 @@ export class AuthService {
         password: passwordHash
       });
 
-      const payload: AccessTokenPayload = {
-        sub: user.id,
-        username: user.username
-      };
-
-      const accessToken = await this.generateAccessToken(payload);
-
-      const { token: refreshToken, expiresAt: refreshExpiresAt } =
-        await this.generateRefreshToken(payload);
-
-      const refreshTokenHash = await bcrypt.hash(refreshToken, 10);
-
-      await this.authRepository.create({
-        userId: user.id,
-        deviceId: deviceId,
-        tokenHash: refreshTokenHash,
-        expiresAt: refreshExpiresAt
-      });
+      const session = await this.issueSession(user, deviceId);
 
       this.logger.info("User registered successfully", {
         userId: user.id,
         username: user.username
       });
 
-      return {
-        user: {
-          id: user.id,
-          username: user.username
-        },
-        accessToken,
-        refreshToken
-      };
+      return session;
     } catch (error: unknown) {
       if (error instanceof ConflictException) {
         this.logger.warn("User registration conflict", { username });
@@ -234,36 +245,13 @@ export class AuthService {
       throw new UnauthorizedException("Invalid username or password");
     }
 
-    const payload: AccessTokenPayload = {
-      sub: user.id,
-      username: user.username
-    };
-
     await this.usersService.resetFailedLogin(user.id);
 
-    const accessToken = await this.generateAccessToken(payload);
-    const { token: refreshToken, expiresAt } =
-      await this.generateRefreshToken(payload);
-
-    // for overwrite token for same device
-    await this.authRepository.deleteTokenByUserAndDevice(user.id, deviceId);
-
-    await this.authRepository.create({
-      userId: user.id,
-      deviceId: deviceId,
-      tokenHash: await bcrypt.hash(refreshToken, 10),
-      expiresAt
-    });
-
-    await this.usersService.resetFailedLogin(user.id);
+    const session = await this.issueSession(user, deviceId);
 
     await this.usersService.updatelastLogin(user.id);
 
-    return {
-      user: { id: user.id, username: user.username },
-      accessToken,
-      refreshToken
-    };
+    return session;
   }
 
   /**
@@ -389,5 +377,37 @@ export class AuthService {
     if (resolvedType == "current") {
       await this.authRepository.deleteTokenByUserAndDevice(userId, deviceId);
     }
+  }
+
+  /**
+   * Change the password of the signed-in user.
+   *
+   * Every session is signed out (refresh tokens deleted, older access
+   * tokens rejected via passwordChangedAt) and the current device gets
+   * a fresh token pair so the user stays signed in here.
+   *
+   * @throws BadRequestException if the current password is wrong
+   */
+  async changePassword(
+    request: ChangePasswordContext
+  ): Promise<AuthUserResponse> {
+    const { userId, deviceId, currentPassword, newPassword } = request;
+
+    const user = await this.usersService.findUserById(userId);
+
+    if (!(await bcrypt.compare(currentPassword, user.password))) {
+      throw new BadRequestException("Current password is incorrect");
+    }
+
+    await this.usersService.changePassword(
+      userId,
+      await bcrypt.hash(newPassword, 10)
+    );
+
+    await this.authRepository.deleteAllTokenUser(userId);
+
+    this.logger.info("Password changed", { userId });
+
+    return this.issueSession(user, deviceId);
   }
 }

@@ -1,3 +1,5 @@
+jest.mock("bcrypt", () => ({ compare: jest.fn() }));
+
 import { Test, TestingModule } from "@nestjs/testing";
 import {
   BadRequestException,
@@ -7,6 +9,7 @@ import {
 } from "@nestjs/common";
 import { UsersService } from "./users.service";
 import { UsersRepository } from "./users.repository";
+import * as bcrypt from "bcrypt";
 
 // =====================
 // MOCK REPOSITORY
@@ -18,7 +21,10 @@ const mockUsersRepository = {
   update: jest.fn(),
   findByIdWithAvatar: jest.fn(),
   findActiveAvatarById: jest.fn(),
-  findActiveAvatars: jest.fn()
+  findActiveAvatars: jest.fn(),
+  findById: jest.fn(),
+  countOwnedTripsWithMembers: jest.fn(),
+  softDelete: jest.fn()
 };
 
 const activeUser = {
@@ -232,6 +238,76 @@ describe("UsersService", () => {
       mockUsersRepository.findActiveAvatars.mockResolvedValue(avatars);
 
       await expect(service.getAvatars()).resolves.toEqual(avatars);
+    });
+  });
+
+  // =====================
+  // findActiveById
+  // =====================
+  describe("findActiveById", () => {
+    it.each([
+      ["active", activeUser, true],
+      ["inactive", { ...activeUser, isActive: false }, false],
+      ["deleted", { ...activeUser, deletedAt: new Date() }, false],
+      ["missing", null, false]
+    ])("should handle %s users", async (_, user, found) => {
+      mockUsersRepository.findById.mockResolvedValue(user);
+
+      const result = await service.findActiveById("u1");
+
+      expect(result !== null).toBe(found);
+    });
+  });
+
+  // =====================
+  // changePassword
+  // =====================
+  describe("changePassword", () => {
+    it("should store the change time truncated to whole seconds", async () => {
+      await service.changePassword("u1", "new-hash");
+
+      const [[, data]] = mockUsersRepository.update.mock.calls as [
+        [string, { password: string; passwordChangedAt: Date }]
+      ];
+      expect(data.password).toBe("new-hash");
+      expect(data.passwordChangedAt.getMilliseconds()).toBe(0);
+    });
+  });
+
+  // =====================
+  // deleteAccount
+  // =====================
+  describe("deleteAccount", () => {
+    beforeEach(() => {
+      mockUsersRepository.findById.mockResolvedValue(activeUser);
+    });
+
+    it("should soft delete after confirming the password", async () => {
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+      mockUsersRepository.countOwnedTripsWithMembers.mockResolvedValue(0);
+
+      await service.deleteAccount("u1", "Passw0rd!");
+
+      expect(mockUsersRepository.softDelete).toHaveBeenCalledWith("u1");
+    });
+
+    it("should reject a wrong password", async () => {
+      (bcrypt.compare as jest.Mock).mockResolvedValue(false);
+
+      await expect(service.deleteAccount("u1", "wrong")).rejects.toBeInstanceOf(
+        BadRequestException
+      );
+      expect(mockUsersRepository.softDelete).not.toHaveBeenCalled();
+    });
+
+    it("should refuse while owning trips with other members", async () => {
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+      mockUsersRepository.countOwnedTripsWithMembers.mockResolvedValue(2);
+
+      await expect(
+        service.deleteAccount("u1", "Passw0rd!")
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(mockUsersRepository.softDelete).not.toHaveBeenCalled();
     });
   });
 });

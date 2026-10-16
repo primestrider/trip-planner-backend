@@ -1,4 +1,8 @@
-import { LoginUserDto, RegisterUserDto } from "../auth.validation";
+import {
+  ChangePasswordDto,
+  LoginUserDto,
+  RegisterUserDto
+} from "../auth.validation";
 
 /**
  * Context objects contain all data required
@@ -12,6 +16,11 @@ export type LoginContext = LoginUserDto & {
 };
 
 export type RegisterContext = RegisterUserDto & {
+  deviceId: string;
+};
+
+export type ChangePasswordContext = ChangePasswordDto & {
+  userId: string;
   deviceId: string;
 };
 
@@ -45,9 +54,13 @@ export type AuthUserResponse = {
   refreshToken: string;
 };
 
-export type JwtAccessPayload = {
-  sub: string;
-  role: string;
+/**
+ * Access token payload after verification (adds standard JWT claims)
+ */
+export type JwtAccessPayload = AccessTokenPayload & {
+  // issued at, seconds since epoch
+  iat: number;
+  exp: number;
 };
 
 export type LogoutType = "current" | "all_devices";

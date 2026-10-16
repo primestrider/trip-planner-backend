@@ -6,6 +6,7 @@ import {
   InternalServerErrorException,
   NotFoundException
 } from "@nestjs/common";
+import * as bcrypt from "bcrypt";
 import { UsersRepository } from "./users.repository";
 import { User } from "@prisma/client";
 import { AvatarResponse, UserProfileResponse } from "./models";
@@ -83,7 +84,6 @@ export class UsersService {
    * @throws ForbiddenException
    */
   ensureAccountNotLocked(user: User): void {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
     if (user.lockUntil && user.lockUntil.getTime() > Date.now()) {
       throw new ForbiddenException("Account is temporarily locked");
     }
@@ -99,11 +99,9 @@ export class UsersService {
     const MAX_ATTEMPTS = 5;
     const LOCK_DURATION_MS = 15 * 60 * 1000;
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const currentAttempts: number = user.failedLoginAttempts ?? 0;
     const nextFailedAttempts: number = currentAttempts + 1;
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const lockUntil: Date | null =
       nextFailedAttempts >= MAX_ATTEMPTS
         ? new Date(Date.now() + LOCK_DURATION_MS)
@@ -196,5 +194,55 @@ export class UsersService {
    */
   async getAvatars(): Promise<AvatarResponse[]> {
     return this.usersRepository.findActiveAvatars();
+  }
+
+  /**
+   * User that an access token may act for: exists, active, not deleted.
+   *
+   * @returns the user, or `null` when tokens of this user must be rejected
+   */
+  async findActiveById(userId: string): Promise<User | null> {
+    const user = await this.usersRepository.findById(userId);
+    return user && user.isActive && !user.deletedAt ? user : null;
+  }
+
+  /**
+   * Store a new password hash and the moment it changed.
+   *
+   * The time is truncated to whole seconds because JWT `iat` has
+   * second precision: tokens issued from this second on stay valid,
+   * older ones are rejected by the access token strategy.
+   */
+  async changePassword(userId: string, passwordHash: string): Promise<void> {
+    await this.usersRepository.update(userId, {
+      password: passwordHash,
+      passwordChangedAt: new Date(Math.floor(Date.now() / 1000) * 1000)
+    });
+  }
+
+  /**
+   * Delete the user's account after confirming the password (soft delete).
+   *
+   * @throws BadRequestException if the password is wrong
+   * @throws ConflictException if the user still owns trips with other
+   *         members; ownership must be transferred first
+   */
+  async deleteAccount(userId: string, password: string): Promise<void> {
+    const user = await this.findUserById(userId);
+
+    if (!(await bcrypt.compare(password, user.password))) {
+      throw new BadRequestException("Password is incorrect");
+    }
+
+    const sharedTrips =
+      await this.usersRepository.countOwnedTripsWithMembers(userId);
+
+    if (sharedTrips > 0) {
+      throw new ConflictException(
+        `You own ${sharedTrips} trip(s) with other members; transfer ownership or remove the members first`
+      );
+    }
+
+    await this.usersRepository.softDelete(userId);
   }
 }

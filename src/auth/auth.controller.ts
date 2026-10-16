@@ -12,6 +12,8 @@ import { ValidationPipe } from "src/common/validation/validation.pipe";
 import {
   type RegisterUserDto,
   type LoginUserDto,
+  type ChangePasswordDto,
+  ChangePasswordSchema,
   LoginSchema,
   RegisterSchema
 } from "./auth.validation";
@@ -108,5 +110,20 @@ export class AuthController {
   ): Promise<null> {
     await this.authService.logout(userId, deviceId, type);
     return null;
+  }
+
+  /**
+   * Change password; signs out every other session
+   *  POST /authentication/change-password
+   */
+  @Post("change-password")
+  @UseGuards(AccessTokenGuard)
+  @HttpCode(HttpStatus.OK)
+  async changePassword(
+    @CurrentUser("sub") userId: string,
+    @CurrentDevice() deviceId: string,
+    @Body(ValidationPipe(ChangePasswordSchema)) body: ChangePasswordDto
+  ): Promise<AuthUserResponse> {
+    return this.authService.changePassword({ ...body, userId, deviceId });
   }
 }
