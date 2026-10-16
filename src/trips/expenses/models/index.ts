@@ -17,6 +17,8 @@ export type ExpenseResponse = {
   amount: number;
   spentDate: string | null;
   paidBy: ExpenseUser | null;
+  // equal parts owed by each member; sums to amount
+  splits: { user: ExpenseUser; amount: number }[];
   notes: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -51,4 +53,26 @@ export type BudgetSummaryResponse = {
     paidBy: ExpenseUser | null;
     total: number;
   }[];
+};
+
+/**
+ * Who owes whom, in trip currency.
+ * net = paid - share; positive means the member should receive money.
+ */
+export type SettlementResponse = {
+  currency: string;
+  balances: {
+    user: ExpenseUser;
+    paid: number;
+    share: number;
+    net: number;
+  }[];
+  // fewest transfers that settle every balance
+  transfers: {
+    from: ExpenseUser;
+    to: ExpenseUser;
+    amount: number;
+  }[];
+  // expenses without a known payer, not included in balances
+  unassignedTotal: number;
 };

@@ -27,7 +27,8 @@ import {
 import {
   type BudgetSummaryResponse,
   type ExpenseListResponse,
-  type ExpenseResponse
+  type ExpenseResponse,
+  type SettlementResponse
 } from "./models";
 
 @Controller("trips/:tripId")
@@ -45,6 +46,18 @@ export class ExpensesController {
     @Param("tripId", ParseUUIDPipe) tripId: string
   ): Promise<BudgetSummaryResponse> {
     return this.expensesService.getBudgetSummary(userId, tripId);
+  }
+
+  /**
+   * Who owes whom, with the fewest transfers to settle up
+   *  GET /trips/:tripId/settlement
+   */
+  @Get("settlement")
+  async getSettlement(
+    @CurrentUser("sub") userId: string,
+    @Param("tripId", ParseUUIDPipe) tripId: string
+  ): Promise<SettlementResponse> {
+    return this.expensesService.getSettlement(userId, tripId);
   }
 
   /**

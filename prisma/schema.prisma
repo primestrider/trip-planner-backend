@@ -34,6 +34,7 @@ model User {
   trips           Trip[]
   tripMemberships TripMember[]
   paidExpenses    TripExpense[]
+  expenseShares   TripExpenseShare[]
 
   createdAt DateTime  @default(now()) @db.Timestamp(0)
   updatedAt DateTime  @updatedAt @db.Timestamp(0)
@@ -292,10 +293,27 @@ model TripExpense {
 
   notes String? @db.Text
 
+  shares TripExpenseShare[]
+
   createdAt DateTime @default(now()) @db.Timestamp(0)
   updatedAt DateTime @updatedAt @db.Timestamp(0)
 
   @@index([tripId, spentDate])
   @@index([paidByUserId])
   @@map("trip_expenses")
+}
+
+// Part of an expense owed by one trip participant (equal split)
+model TripExpenseShare {
+  expenseId String
+  expense   TripExpense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  amount Decimal @db.Decimal(14, 2)
+
+  @@id([expenseId, userId])
+  @@index([userId])
+  @@map("trip_expense_shares")
 }

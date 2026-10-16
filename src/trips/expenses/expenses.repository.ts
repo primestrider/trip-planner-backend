@@ -2,9 +2,17 @@ import { Injectable } from "@nestjs/common";
 import { ExpenseCategory, Prisma } from "@prisma/client";
 import { PrismaService } from "src/common/prisma.service";
 
+const userSelect = { id: true, username: true, name: true } as const;
+
 const paidBySelect = {
-  paidBy: { select: { id: true, username: true, name: true } }
+  paidBy: { select: userSelect },
+  shares: {
+    include: { user: { select: userSelect } },
+    orderBy: { userId: "asc" }
+  }
 } satisfies Prisma.TripExpenseInclude;
+
+export type ExpenseShareInput = { userId: string; amount: number };
 
 export type ExpenseWithPayer = Prisma.TripExpenseGetPayload<{
   include: typeof paidBySelect;
@@ -20,10 +28,17 @@ export type ExpenseWithPayer = Prisma.TripExpenseGetPayload<{
 export class ExpensesRepository {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Create an expense together with how it is split.
+   */
   async create(
-    data: Prisma.TripExpenseUncheckedCreateInput
+    data: Omit<Prisma.TripExpenseUncheckedCreateInput, "shares">,
+    shares: ExpenseShareInput[]
   ): Promise<ExpenseWithPayer> {
-    return this.prisma.tripExpense.create({ data, include: paidBySelect });
+    return this.prisma.tripExpense.create({
+      data: { ...data, shares: { create: shares } },
+      include: paidBySelect
+    });
   }
 
   async findByIdAndTrip(
@@ -94,17 +109,40 @@ export class ExpensesRepository {
   async findUsers(userIds: string[]) {
     return this.prisma.user.findMany({
       where: { id: { in: userIds } },
-      select: { id: true, username: true, name: true }
+      select: userSelect
     });
   }
 
+  /**
+   * Amounts, payers and splits of every expense of a trip,
+   * for settling who owes whom.
+   */
+  async findForSettlement(tripId: string) {
+    return this.prisma.tripExpense.findMany({
+      where: { tripId },
+      select: {
+        amount: true,
+        paidByUserId: true,
+        shares: { select: { userId: true, amount: true } }
+      }
+    });
+  }
+
+  /**
+   * Update an expense. When `shares` is given, the split is replaced
+   * in the same statement.
+   */
   async update(
     expenseId: string,
-    data: Prisma.TripExpenseUncheckedUpdateInput
+    data: Omit<Prisma.TripExpenseUncheckedUpdateInput, "shares">,
+    shares?: ExpenseShareInput[]
   ): Promise<ExpenseWithPayer> {
     return this.prisma.tripExpense.update({
       where: { id: expenseId },
-      data,
+      data: {
+        ...data,
+        ...(shares && { shares: { deleteMany: {}, create: shares } })
+      },
       include: paidBySelect
     });
   }
