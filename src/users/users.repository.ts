@@ -81,12 +81,55 @@ export class UsersRepository {
       }),
       ...(payload.deletedAt !== undefined && {
         deletedAt: payload.deletedAt
+      }),
+      ...(payload.name !== undefined && {
+        name: payload.name
+      }),
+      ...(payload.avatarId !== undefined && {
+        avatarId: payload.avatarId
       })
     };
 
     return this.prisma.user.update({
       where: { id: userId },
       data
+    });
+  }
+
+  /**
+   * Find a user by ID including its selected avatar.
+   *
+   * @param userId Unique user ID
+   * @returns User record with avatar if found, otherwise `null`
+   */
+  async findByIdWithAvatar(userId: string) {
+    return this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { avatar: { select: { id: true, url: true } } }
+    });
+  }
+
+  /**
+   * Find an active avatar by its ID.
+   *
+   * @param avatarId Avatar ID
+   * @returns Avatar record if found and active, otherwise `null`
+   */
+  async findActiveAvatarById(avatarId: number) {
+    return this.prisma.avatar.findFirst({
+      where: { id: avatarId, isActive: true },
+      select: { id: true, url: true }
+    });
+  }
+
+  /**
+   * List all active avatars ordered for display.
+   */
+  async findActiveAvatars() {
+    return this.prisma.avatar.findMany({
+      where: { isActive: true },
+      orderBy: [{ order: "asc" }, { id: "asc" }],
+      select: { id: true, url: true }
     });
   }
 }

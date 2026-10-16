@@ -1,7 +1,9 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import {
+  BadRequestException,
   ConflictException,
-  InternalServerErrorException
+  InternalServerErrorException,
+  NotFoundException
 } from "@nestjs/common";
 import { UsersService } from "./users.service";
 import { UsersRepository } from "./users.repository";
@@ -12,7 +14,24 @@ import { UsersRepository } from "./users.repository";
 
 const mockUsersRepository = {
   findByUsername: jest.fn(),
-  create: jest.fn()
+  create: jest.fn(),
+  update: jest.fn(),
+  findByIdWithAvatar: jest.fn(),
+  findActiveAvatarById: jest.fn(),
+  findActiveAvatars: jest.fn()
+};
+
+const activeUser = {
+  id: "u1",
+  username: "john",
+  password: "hashed",
+  name: null,
+  role: "USER",
+  isActive: true,
+  deletedAt: null,
+  lastLoginAt: null,
+  createdAt: new Date("2026-01-01T00:00:00Z"),
+  avatar: null
 };
 
 describe("UsersService", () => {
@@ -120,6 +139,99 @@ describe("UsersService", () => {
       await expect(service.create(createPayload)).rejects.toBeInstanceOf(
         InternalServerErrorException
       );
+    });
+  });
+
+  // =====================
+  // getProfile
+  // =====================
+  describe("getProfile", () => {
+    it("should return profile without sensitive fields", async () => {
+      mockUsersRepository.findByIdWithAvatar.mockResolvedValue(activeUser);
+
+      const result = await service.getProfile("u1");
+
+      expect(result).toEqual({
+        id: "u1",
+        username: "john",
+        name: null,
+        role: "USER",
+        avatar: null,
+        lastLoginAt: null,
+        createdAt: activeUser.createdAt
+      });
+      expect(result).not.toHaveProperty("password");
+    });
+
+    it.each([
+      ["not found", null],
+      ["inactive", { ...activeUser, isActive: false }],
+      ["deleted", { ...activeUser, deletedAt: new Date() }]
+    ])("should throw NotFoundException when user is %s", async (_, user) => {
+      mockUsersRepository.findByIdWithAvatar.mockResolvedValue(user);
+
+      await expect(service.getProfile("u1")).rejects.toBeInstanceOf(
+        NotFoundException
+      );
+    });
+  });
+
+  // =====================
+  // updateProfile
+  // =====================
+  describe("updateProfile", () => {
+    it("should update name and avatar when avatar is active", async () => {
+      const avatar = { id: 3, url: "https://example.com/3" };
+      mockUsersRepository.findByIdWithAvatar
+        .mockResolvedValueOnce(activeUser)
+        .mockResolvedValueOnce({ ...activeUser, name: "John", avatar });
+      mockUsersRepository.findActiveAvatarById.mockResolvedValue(avatar);
+
+      const result = await service.updateProfile("u1", {
+        name: "John",
+        avatarId: 3
+      });
+
+      expect(mockUsersRepository.update).toHaveBeenCalledWith("u1", {
+        name: "John",
+        avatarId: 3
+      });
+      expect(result.name).toBe("John");
+      expect(result.avatar).toEqual(avatar);
+    });
+
+    it("should allow clearing avatar without avatar lookup", async () => {
+      mockUsersRepository.findByIdWithAvatar.mockResolvedValue(activeUser);
+
+      await service.updateProfile("u1", { avatarId: null });
+
+      expect(mockUsersRepository.findActiveAvatarById).not.toHaveBeenCalled();
+      expect(mockUsersRepository.update).toHaveBeenCalledWith("u1", {
+        name: undefined,
+        avatarId: null
+      });
+    });
+
+    it("should throw BadRequestException when avatar is not available", async () => {
+      mockUsersRepository.findByIdWithAvatar.mockResolvedValue(activeUser);
+      mockUsersRepository.findActiveAvatarById.mockResolvedValue(null);
+
+      await expect(
+        service.updateProfile("u1", { avatarId: 99 })
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(mockUsersRepository.update).not.toHaveBeenCalled();
+    });
+  });
+
+  // =====================
+  // getAvatars
+  // =====================
+  describe("getAvatars", () => {
+    it("should return active avatars", async () => {
+      const avatars = [{ id: 1, url: "https://example.com/1" }];
+      mockUsersRepository.findActiveAvatars.mockResolvedValue(avatars);
+
+      await expect(service.getAvatars()).resolves.toEqual(avatars);
     });
   });
 });
