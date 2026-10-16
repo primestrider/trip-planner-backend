@@ -6,6 +6,7 @@ import { AuthRepository } from "./auth.repository";
 import { JwtModule } from "@nestjs/jwt";
 import { JwtAccessStrategy } from "./strategies/jwt.strategy";
 import { JwtRefreshStrategy } from "./strategies/jwt-refresh.strategy";
+import { AuthTasks } from "./auth.tasks";
 
 @Module({
   imports: [UsersModule, JwtModule.register({})],
@@ -13,7 +14,8 @@ import { JwtRefreshStrategy } from "./strategies/jwt-refresh.strategy";
     AuthService,
     AuthRepository,
     JwtAccessStrategy,
-    JwtRefreshStrategy
+    JwtRefreshStrategy,
+    AuthTasks
   ],
   controllers: [AuthController]
 })

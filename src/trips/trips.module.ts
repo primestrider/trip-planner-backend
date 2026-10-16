@@ -25,6 +25,7 @@ import {
 } from "./invites/invites.controller";
 import { InvitesService } from "./invites/invites.service";
 import { InvitesRepository } from "./invites/invites.repository";
+import { InvitesTasks } from "./invites/invites.tasks";
 import { ChecklistController } from "./checklist/checklist.controller";
 import { ChecklistService } from "./checklist/checklist.service";
 import { ChecklistRepository } from "./checklist/checklist.repository";
@@ -65,6 +66,7 @@ import { ShareService } from "./share/share.service";
     ExpensesRepository,
     InvitesService,
     InvitesRepository,
+    InvitesTasks,
     ChecklistService,
     ChecklistRepository,
     ShareService
