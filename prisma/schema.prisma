@@ -184,6 +184,9 @@ model ItineraryItem {
   startTime String? @db.VarChar(5)
   endTime   String? @db.VarChar(5)
 
+  // manual order within the day, used for untimed items and equal start times
+  position Int @default(0)
+
   createdAt DateTime @default(now()) @db.Timestamp(0)
   updatedAt DateTime @updatedAt @db.Timestamp(0)
 

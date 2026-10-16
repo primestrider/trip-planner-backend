@@ -25,7 +25,9 @@ const mockItineraryRepository = {
   findManyByTrip: jest.fn(),
   findManyByTripAndDay: jest.fn(),
   update: jest.fn(),
-  delete: jest.fn()
+  delete: jest.fn(),
+  nextPosition: jest.fn(),
+  reorder: jest.fn()
 };
 
 const mockLogger = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
@@ -84,6 +86,7 @@ describe("ItineraryService", () => {
 
     service = module.get<ItineraryService>(ItineraryService);
     mockTripAccess.getTrip.mockResolvedValue({ trip, role: "OWNER" });
+    mockItineraryRepository.nextPosition.mockResolvedValue(4);
     mockAccommodationsRepository.findManyByTrip.mockResolvedValue([]);
     mockTransportsRepository.findManyByTrip.mockResolvedValue([]);
   });
@@ -259,6 +262,7 @@ describe("ItineraryService", () => {
       expect(mockItineraryRepository.create).toHaveBeenCalledWith({
         tripId: "t1",
         dayNumber: 1,
+        position: 4,
         title: "Beach",
         description: null,
         locationName: null,
@@ -333,8 +337,14 @@ describe("ItineraryService", () => {
         dayNumber: 3
       });
 
+      // moved to the end of day 3
+      expect(mockItineraryRepository.nextPosition).toHaveBeenCalledWith(
+        "t1",
+        3
+      );
       expect(mockItineraryRepository.update).toHaveBeenCalledWith("i1", {
-        dayNumber: 3
+        dayNumber: 3,
+        position: 4
       });
       expect(result.dayNumber).toBe(3);
     });
@@ -386,6 +396,41 @@ describe("ItineraryService", () => {
       await expect(
         service.updateItem("u1", "t1", "i1", { title: "x" })
       ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe("reorderDay", () => {
+    const A = "aaaaaaaa-0000-4000-8000-000000000001";
+    const B = "aaaaaaaa-0000-4000-8000-000000000002";
+
+    it("should save the new order of the day", async () => {
+      mockItineraryRepository.findManyByTripAndDay.mockResolvedValue([
+        makeItem({ id: A }),
+        makeItem({ id: B })
+      ]);
+
+      await service.reorderDay("u1", "t1", 1, { itemIds: [B, A] });
+
+      expect(mockTripAccess.getTrip).toHaveBeenCalledWith("u1", "t1", "EDITOR");
+      expect(mockItineraryRepository.reorder).toHaveBeenCalledWith("t1", [
+        B,
+        A
+      ]);
+    });
+
+    it.each([
+      ["missing an item", [A]],
+      ["containing an item of another day", [A, B, "other"]]
+    ])("should reject a list %s", async (_, itemIds) => {
+      mockItineraryRepository.findManyByTripAndDay.mockResolvedValue([
+        makeItem({ id: A }),
+        makeItem({ id: B })
+      ]);
+
+      await expect(
+        service.reorderDay("u1", "t1", 1, { itemIds })
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(mockItineraryRepository.reorder).not.toHaveBeenCalled();
     });
   });
 

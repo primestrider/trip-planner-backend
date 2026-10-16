@@ -22,6 +22,7 @@ import {
 } from "./models";
 import {
   CreateItineraryItemDto,
+  ReorderItineraryDayDto,
   UpdateItineraryItemDto
 } from "./itinerary.validation";
 import { addDays, countDaysInclusive, toDateString } from "src/utils/date";
@@ -223,6 +224,11 @@ export class ItineraryService {
     const item = await this.itineraryRepository.create({
       tripId: trip.id,
       dayNumber: payload.dayNumber,
+      // new items go to the end of the day
+      position: await this.itineraryRepository.nextPosition(
+        trip.id,
+        payload.dayNumber
+      ),
       title: payload.title,
       description: payload.description ?? null,
       ...toLocationColumns(payload.location ?? null),
@@ -253,6 +259,9 @@ export class ItineraryService {
     const { trip } = await this.tripAccess.getTrip(userId, tripId, "EDITOR");
     const item = await this.findItem(trip.id, itemId);
 
+    const movesDay =
+      payload.dayNumber !== undefined && payload.dayNumber !== item.dayNumber;
+
     if (payload.dayNumber !== undefined) {
       this.ensureDayInTrip(trip, payload.dayNumber);
     }
@@ -268,7 +277,14 @@ export class ItineraryService {
     }
 
     const updated = await this.itineraryRepository.update(item.id, {
-      ...(payload.dayNumber !== undefined && { dayNumber: payload.dayNumber }),
+      // an item moved to another day goes to the end of that day
+      ...(movesDay && {
+        dayNumber: payload.dayNumber,
+        position: await this.itineraryRepository.nextPosition(
+          trip.id,
+          payload.dayNumber!
+        )
+      }),
       ...(payload.title !== undefined && { title: payload.title }),
       ...(payload.description !== undefined && {
         description: payload.description
@@ -296,5 +312,43 @@ export class ItineraryService {
     await this.itineraryRepository.delete(item.id);
 
     this.logger.info("Itinerary item deleted", { userId, tripId, itemId });
+  }
+
+  /**
+   * Set the manual order of a day (drag & drop).
+   * Timed items still follow their start time; the manual order applies
+   * to untimed items and items with the same start time.
+   *
+   * @throws BadRequestException unless `itemIds` is exactly the day's items
+   */
+  async reorderDay(
+    userId: string,
+    tripId: string,
+    dayNumber: number,
+    payload: ReorderItineraryDayDto
+  ): Promise<ItineraryDayResponse> {
+    const { trip } = await this.tripAccess.getTrip(userId, tripId, "EDITOR");
+    this.ensureDayInTrip(trip, dayNumber);
+
+    const items = await this.itineraryRepository.findManyByTripAndDay(
+      trip.id,
+      dayNumber
+    );
+    const dayIds = new Set(items.map((item) => item.id));
+
+    if (
+      payload.itemIds.length !== dayIds.size ||
+      payload.itemIds.some((id) => !dayIds.has(id))
+    ) {
+      throw new BadRequestException(
+        "itemIds must list every item of the day exactly once"
+      );
+    }
+
+    await this.itineraryRepository.reorder(trip.id, payload.itemIds);
+
+    this.logger.info("Itinerary day reordered", { userId, tripId, dayNumber });
+
+    return this.getDay(userId, tripId, dayNumber);
   }
 }

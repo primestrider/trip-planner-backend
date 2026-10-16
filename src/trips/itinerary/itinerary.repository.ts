@@ -3,11 +3,13 @@ import { ItineraryItem, Prisma } from "@prisma/client";
 import { PrismaService } from "src/common/prisma.service";
 
 /**
- * Items of a day: timed items by start time, untimed items last,
- * ties by creation order.
+ * Items of a day: timed items by start time, untimed items last.
+ * Untimed items and equal start times follow the manual position,
+ * then creation order.
  */
 const itemOrder: Prisma.ItineraryItemOrderByWithRelationInput[] = [
   { startTime: { sort: "asc", nulls: "last" } },
+  { position: "asc" },
   { createdAt: "asc" }
 ];
 
@@ -90,5 +92,31 @@ export class ItineraryRepository {
     await this.prisma.itineraryItem.delete({
       where: { id: itemId }
     });
+  }
+
+  /**
+   * Position right after the last item of a day
+   */
+  async nextPosition(tripId: string, dayNumber: number): Promise<number> {
+    const result = await this.prisma.itineraryItem.aggregate({
+      where: { tripId, dayNumber },
+      _max: { position: true }
+    });
+
+    return (result._max.position ?? -1) + 1;
+  }
+
+  /**
+   * Set the manual order of a day's items to the order of `itemIds`.
+   */
+  async reorder(tripId: string, itemIds: string[]): Promise<void> {
+    await this.prisma.$transaction(
+      itemIds.map((id, position) =>
+        this.prisma.itineraryItem.updateMany({
+          where: { id, tripId },
+          data: { position }
+        })
+      )
+    );
   }
 }

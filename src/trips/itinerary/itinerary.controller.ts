@@ -10,6 +10,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   UseGuards
 } from "@nestjs/common";
 import { ItineraryService } from "./itinerary.service";
@@ -20,6 +21,8 @@ import {
   type CreateItineraryItemDto,
   type UpdateItineraryItemDto,
   CreateItineraryItemSchema,
+  ReorderItineraryDaySchema,
+  type ReorderItineraryDayDto,
   UpdateItineraryItemSchema
 } from "./itinerary.validation";
 import {
@@ -56,6 +59,21 @@ export class ItineraryController {
     @Param("dayNumber", ParseIntPipe) dayNumber: number
   ): Promise<ItineraryDayResponse> {
     return this.itineraryService.getDay(userId, tripId, dayNumber);
+  }
+
+  /**
+   * Set the manual order of a day's items (drag & drop)
+   *  PUT /trips/:tripId/itinerary/days/:dayNumber/order
+   */
+  @Put("days/:dayNumber/order")
+  async reorderDay(
+    @CurrentUser("sub") userId: string,
+    @Param("tripId", ParseUUIDPipe) tripId: string,
+    @Param("dayNumber", ParseIntPipe) dayNumber: number,
+    @Body(ValidationPipe(ReorderItineraryDaySchema))
+    body: ReorderItineraryDayDto
+  ): Promise<ItineraryDayResponse> {
+    return this.itineraryService.reorderDay(userId, tripId, dayNumber, body);
   }
 
   /**

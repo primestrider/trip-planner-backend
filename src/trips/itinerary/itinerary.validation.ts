@@ -40,5 +40,20 @@ export const UpdateItineraryItemSchema = ItineraryItemFields.partial()
     timeRangeMessage
   );
 
+export const ReorderItineraryDaySchema = z
+  .object({
+    // every item of the day, in the wanted order
+    itemIds: z
+      .array(z.uuid())
+      .min(1)
+      .max(500)
+      .refine(
+        (ids) => new Set(ids).size === ids.length,
+        "Items must not be repeated"
+      )
+  })
+  .strict();
+
 export type CreateItineraryItemDto = z.infer<typeof CreateItineraryItemSchema>;
 export type UpdateItineraryItemDto = z.infer<typeof UpdateItineraryItemSchema>;
+export type ReorderItineraryDayDto = z.infer<typeof ReorderItineraryDaySchema>;
