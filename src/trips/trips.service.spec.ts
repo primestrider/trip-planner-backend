@@ -9,16 +9,23 @@ import { WINSTON_MODULE_PROVIDER } from "nest-winston";
 import { TripsService } from "./trips.service";
 import { TripsRepository } from "./trips.repository";
 import { ItineraryRepository } from "./itinerary/itinerary.repository";
+import { ChecklistRepository } from "./checklist/checklist.repository";
 import { TripAccessService } from "./trip-access.service";
 
 const mockItineraryRepository = {
-  findMaxDayNumber: jest.fn()
+  findMaxDayNumber: jest.fn(),
+  findManyByTrip: jest.fn()
+};
+
+const mockChecklistRepository = {
+  findManyByTrip: jest.fn()
 };
 
 const mockTripsRepository = {
   create: jest.fn(),
   findByIdForUser: jest.fn(),
   findManyForUser: jest.fn(),
+  createWithContent: jest.fn(),
   update: jest.fn(),
   delete: jest.fn()
 };
@@ -74,6 +81,7 @@ describe("TripsService", () => {
         TripAccessService,
         { provide: TripsRepository, useValue: mockTripsRepository },
         { provide: ItineraryRepository, useValue: mockItineraryRepository },
+        { provide: ChecklistRepository, useValue: mockChecklistRepository },
         { provide: WINSTON_MODULE_PROVIDER, useValue: mockLogger }
       ]
     }).compile();
@@ -258,6 +266,107 @@ describe("TripsService", () => {
         NotFoundException
       );
       expect(mockTripsRepository.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("duplicate", () => {
+    const item = {
+      id: "i1",
+      tripId: "t1",
+      dayNumber: 2,
+      position: 1,
+      title: "Beach",
+      description: null,
+      locationName: "Kuta",
+      locationAddress: null,
+      locationLatitude: null,
+      locationLongitude: null,
+      locationPlaceId: "ChIJ1",
+      locationUrl: null,
+      startTime: "09:00",
+      endTime: null,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    const checklistItem = {
+      id: "c1",
+      tripId: "t1",
+      title: "Passport",
+      category: "Documents",
+      assignedToUserId: "u2",
+      isChecked: true,
+      checkedAt: new Date(),
+      checkedByUserId: "u2"
+    };
+
+    beforeEach(() => {
+      mockItineraryRepository.findManyByTrip.mockResolvedValue([item]);
+      mockChecklistRepository.findManyByTrip.mockResolvedValue([checklistItem]);
+      mockTripsRepository.createWithContent.mockImplementation(
+        (data: Record<string, unknown>) =>
+          Promise.resolve({ ...trip, id: "t2", ...data })
+      );
+    });
+
+    it("should copy trip content into a new trip of the user", async () => {
+      // viewer of someone else's trip
+      mockTripsRepository.findByIdForUser.mockResolvedValue(asMember("VIEWER"));
+
+      const result = await service.duplicate("u2", "t1", {
+        startDate: "2027-01-10"
+      });
+
+      expect(mockTripsRepository.createWithContent).toHaveBeenCalledWith({
+        userId: "u2",
+        title: "Bali (copy)",
+        destination: "Bali, Indonesia",
+        description: null,
+        // 5-day trip keeps its length
+        startDate: new Date("2027-01-10T00:00:00.000Z"),
+        endDate: new Date("2027-01-14T00:00:00.000Z"),
+        currency: "IDR",
+        budgetAmount: null,
+        itineraryItems: [
+          expect.objectContaining({
+            dayNumber: 2,
+            position: 1,
+            title: "Beach",
+            locationPlaceId: "ChIJ1",
+            startTime: "09:00"
+          })
+        ],
+        // checklist copied unchecked and unassigned
+        checklistItems: [{ title: "Passport", category: "Documents" }]
+      });
+      expect(result).toMatchObject({
+        id: "t2",
+        role: "OWNER",
+        startDate: "2027-01-10",
+        endDate: "2027-01-14"
+      });
+    });
+
+    it("should keep the original dates and use a custom title", async () => {
+      mockTripsRepository.findByIdForUser.mockResolvedValue(ownedTrip);
+
+      await service.duplicate("u1", "t1", { title: "Bali lagi" });
+
+      expect(mockTripsRepository.createWithContent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Bali lagi",
+          startDate: trip.startDate,
+          endDate: trip.endDate
+        })
+      );
+    });
+
+    it("should throw NotFoundException without access", async () => {
+      mockTripsRepository.findByIdForUser.mockResolvedValue(null);
+
+      await expect(service.duplicate("u9", "t1", {})).rejects.toBeInstanceOf(
+        NotFoundException
+      );
+      expect(mockTripsRepository.createWithContent).not.toHaveBeenCalled();
     });
   });
 });

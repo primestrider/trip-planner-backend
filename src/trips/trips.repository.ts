@@ -102,4 +102,27 @@ export class TripsRepository {
       where: { id: tripId }
     });
   }
+
+  /**
+   * Create a trip together with its itinerary and checklist in one statement.
+   */
+  async createWithContent(
+    data: Omit<
+      Prisma.TripUncheckedCreateInput,
+      "itineraryItems" | "checklistItems"
+    > & {
+      itineraryItems: Prisma.ItineraryItemCreateManyTripInput[];
+      checklistItems: Prisma.TripChecklistItemCreateManyTripInput[];
+    }
+  ): Promise<Trip> {
+    const { itineraryItems, checklistItems, ...trip } = data;
+
+    return this.prisma.trip.create({
+      data: {
+        ...trip,
+        itineraryItems: { createMany: { data: itineraryItems } },
+        checklistItems: { createMany: { data: checklistItems } }
+      }
+    });
+  }
 }

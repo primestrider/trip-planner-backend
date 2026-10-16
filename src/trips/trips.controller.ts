@@ -18,9 +18,11 @@ import { CurrentUser } from "src/common/decorator/current-user.decorator";
 import { ValidationPipe } from "src/common/validation/validation.pipe";
 import {
   type CreateTripDto,
+  type DuplicateTripDto,
   type ListTripsQuery,
   type UpdateTripDto,
   CreateTripSchema,
+  DuplicateTripSchema,
   ListTripsQuerySchema,
   UpdateTripSchema
 } from "./trips.validation";
@@ -93,5 +95,19 @@ export class TripsController {
   ): Promise<null> {
     await this.tripsService.remove(userId, tripId);
     return null;
+  }
+
+  /**
+   * Copy a trip (any member) into a new trip owned by the current user
+   *  POST /trips/:id/duplicate
+   */
+  @Post(":id/duplicate")
+  @HttpCode(HttpStatus.CREATED)
+  async duplicate(
+    @CurrentUser("sub") userId: string,
+    @Param("id", ParseUUIDPipe) tripId: string,
+    @Body(ValidationPipe(DuplicateTripSchema)) body: DuplicateTripDto
+  ): Promise<TripResponse> {
+    return this.tripsService.duplicate(userId, tripId, body);
   }
 }

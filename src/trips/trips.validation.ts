@@ -47,6 +47,17 @@ export const ListTripsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20)
 });
 
+export const DuplicateTripSchema = z
+  .object({
+    // defaults to "<original title> (copy)"
+    title: z.string().trim().min(1).max(150).optional(),
+
+    // new start date; the trip keeps its length
+    startDate: z.iso.date().optional()
+  })
+  .strict();
+
 export type CreateTripDto = z.infer<typeof CreateTripSchema>;
 export type UpdateTripDto = z.infer<typeof UpdateTripSchema>;
 export type ListTripsQuery = z.infer<typeof ListTripsQuerySchema>;
+export type DuplicateTripDto = z.infer<typeof DuplicateTripSchema>;
