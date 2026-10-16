@@ -82,4 +82,19 @@ export class MembersController {
     await this.membersService.remove(userId, tripId, memberUserId);
     return null;
   }
+
+  /**
+   * Make a member the new owner (owner only).
+   * The previous owner becomes an EDITOR.
+   *  POST /trips/:tripId/members/:userId/transfer-ownership
+   */
+  @Post(":userId/transfer-ownership")
+  @HttpCode(HttpStatus.OK)
+  async transferOwnership(
+    @CurrentUser("sub") userId: string,
+    @Param("tripId", ParseUUIDPipe) tripId: string,
+    @Param("userId", ParseUUIDPipe) newOwnerId: string
+  ): Promise<TripMemberResponse[]> {
+    return this.membersService.transferOwnership(userId, tripId, newOwnerId);
+  }
 }

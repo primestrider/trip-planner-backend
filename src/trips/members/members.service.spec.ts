@@ -19,7 +19,8 @@ const mockMembersRepository = {
   findByTripAndUser: jest.fn(),
   create: jest.fn(),
   updateRole: jest.fn(),
-  delete: jest.fn()
+  delete: jest.fn(),
+  transferOwnership: jest.fn()
 };
 
 const mockUsersService = { findByUsername: jest.fn() };
@@ -229,5 +230,64 @@ describe("MembersService", () => {
         expect(mockMembersRepository.delete).not.toHaveBeenCalled();
       }
     );
+  });
+
+  describe("transferOwnership", () => {
+    beforeEach(() => {
+      mockMembersRepository.findOwner.mockResolvedValue(user("u2", "jane"));
+      mockMembersRepository.findManyByTrip.mockResolvedValue([
+        membership("owner", "EDITOR")
+      ]);
+    });
+
+    it("should hand the trip to a member (owner only)", async () => {
+      mockMembersRepository.findByTripAndUser.mockResolvedValue(
+        membership("u2", "VIEWER")
+      );
+      mockMembersRepository.transferOwnership.mockResolvedValue(true);
+
+      const result = await service.transferOwnership("owner", "t1", "u2");
+
+      expect(mockTripAccess.getTrip).toHaveBeenCalledWith(
+        "owner",
+        "t1",
+        "OWNER"
+      );
+      expect(mockMembersRepository.transferOwnership).toHaveBeenCalledWith(
+        "t1",
+        "owner",
+        "u2"
+      );
+      expect(result.map((m) => [m.userId, m.role])).toEqual([
+        ["u2", "OWNER"],
+        ["owner", "EDITOR"]
+      ]);
+    });
+
+    it("should reject a user who is not a member", async () => {
+      mockMembersRepository.findByTripAndUser.mockResolvedValue(null);
+
+      await expect(
+        service.transferOwnership("owner", "t1", "u9")
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(mockMembersRepository.transferOwnership).not.toHaveBeenCalled();
+    });
+
+    it("should reject transferring to the current owner", async () => {
+      await expect(
+        service.transferOwnership("owner", "t1", "owner")
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it("should report a concurrent ownership change", async () => {
+      mockMembersRepository.findByTripAndUser.mockResolvedValue(
+        membership("u2", "EDITOR")
+      );
+      mockMembersRepository.transferOwnership.mockResolvedValue(false);
+
+      await expect(
+        service.transferOwnership("owner", "t1", "u2")
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
   });
 });

@@ -82,4 +82,38 @@ export class MembersRepository {
       where: { id: memberId }
     });
   }
+
+  /**
+   * Make a member the owner of the trip, atomically:
+   * the new owner leaves the member list and the previous owner
+   * becomes an EDITOR.
+   *
+   * @returns `false` if the trip owner changed in the meantime
+   */
+  async transferOwnership(
+    tripId: string,
+    currentOwnerId: string,
+    newOwnerId: string
+  ): Promise<boolean> {
+    return this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.trip.updateMany({
+        where: { id: tripId, userId: currentOwnerId },
+        data: { userId: newOwnerId }
+      });
+
+      if (count === 0) {
+        return false;
+      }
+
+      await tx.tripMember.delete({
+        where: { tripId_userId: { tripId, userId: newOwnerId } }
+      });
+
+      await tx.tripMember.create({
+        data: { tripId, userId: currentOwnerId, role: "EDITOR" }
+      });
+
+      return true;
+    });
+  }
 }

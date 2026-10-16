@@ -207,4 +207,44 @@ export class MembersService {
 
     this.logger.info("Trip member removed", { userId, tripId, memberUserId });
   }
+
+  /**
+   * Hand the trip over to another member. Owner only.
+   * The previous owner stays on the trip as EDITOR.
+   *
+   * @throws NotFoundException if the user is not a member of the trip
+   * @throws ConflictException if ownership changed concurrently
+   * @returns members after the transfer
+   */
+  async transferOwnership(
+    userId: string,
+    tripId: string,
+    newOwnerId: string
+  ): Promise<TripMemberResponse[]> {
+    const { trip } = await this.tripAccess.getTrip(userId, tripId, "OWNER");
+
+    if (newOwnerId === trip.userId) {
+      throw new BadRequestException("User is already the owner of this trip");
+    }
+
+    await this.findMember(trip.id, newOwnerId);
+
+    const transferred = await this.membersRepository.transferOwnership(
+      trip.id,
+      trip.userId,
+      newOwnerId
+    );
+
+    if (!transferred) {
+      throw new ConflictException("Trip ownership has already changed");
+    }
+
+    this.logger.info("Trip ownership transferred", {
+      userId,
+      tripId,
+      newOwnerId
+    });
+
+    return this.list(newOwnerId, trip.id);
+  }
 }
