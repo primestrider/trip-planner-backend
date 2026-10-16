@@ -7,7 +7,7 @@ import {
 import { ItineraryItem, Trip } from "@prisma/client";
 import { WINSTON_MODULE_PROVIDER } from "nest-winston";
 import { Logger } from "winston";
-import { TripsService } from "../trips.service";
+import { TripAccessService } from "../trip-access.service";
 import { ItineraryRepository } from "./itinerary.repository";
 import {
   ItineraryDayResponse,
@@ -24,13 +24,13 @@ import { toLocationColumns, toLocationResponse } from "../location";
 /**
  * ItineraryService manages the day-by-day plan of a trip.
  *
- * Every operation first loads the trip through TripsService,
- * so only the trip owner can read or change its itinerary.
+ * Every operation first checks access through TripAccessService:
+ * any member can read the itinerary, EDITOR or OWNER can change it.
  */
 @Injectable()
 export class ItineraryService {
   constructor(
-    private readonly tripsService: TripsService,
+    private readonly tripAccess: TripAccessService,
     private readonly itineraryRepository: ItineraryRepository,
     @Inject(WINSTON_MODULE_PROVIDER)
     private readonly logger: Logger
@@ -94,7 +94,7 @@ export class ItineraryService {
     userId: string,
     tripId: string
   ): Promise<ItineraryResponse> {
-    const trip = await this.tripsService.findOwnedTrip(userId, tripId);
+    const { trip } = await this.tripAccess.getTrip(userId, tripId);
     const items = await this.itineraryRepository.findManyByTrip(trip.id);
     const totalDays = this.totalDays(trip);
 
@@ -128,7 +128,7 @@ export class ItineraryService {
     tripId: string,
     dayNumber: number
   ): Promise<ItineraryDayResponse> {
-    const trip = await this.tripsService.findOwnedTrip(userId, tripId);
+    const { trip } = await this.tripAccess.getTrip(userId, tripId);
     this.ensureDayInTrip(trip, dayNumber);
 
     const items = await this.itineraryRepository.findManyByTripAndDay(
@@ -148,7 +148,7 @@ export class ItineraryService {
     tripId: string,
     payload: CreateItineraryItemDto
   ): Promise<ItineraryItemResponse> {
-    const trip = await this.tripsService.findOwnedTrip(userId, tripId);
+    const { trip } = await this.tripAccess.getTrip(userId, tripId, "EDITOR");
     this.ensureDayInTrip(trip, payload.dayNumber);
 
     const item = await this.itineraryRepository.create({
@@ -181,7 +181,7 @@ export class ItineraryService {
     itemId: string,
     payload: UpdateItineraryItemDto
   ): Promise<ItineraryItemResponse> {
-    const trip = await this.tripsService.findOwnedTrip(userId, tripId);
+    const { trip } = await this.tripAccess.getTrip(userId, tripId, "EDITOR");
     const item = await this.findItem(trip.id, itemId);
 
     if (payload.dayNumber !== undefined) {
@@ -221,7 +221,7 @@ export class ItineraryService {
     tripId: string,
     itemId: string
   ): Promise<void> {
-    const trip = await this.tripsService.findOwnedTrip(userId, tripId);
+    const { trip } = await this.tripAccess.getTrip(userId, tripId, "EDITOR");
     const item = await this.findItem(trip.id, itemId);
 
     await this.itineraryRepository.delete(item.id);

@@ -2,12 +2,14 @@ import { Test, TestingModule } from "@nestjs/testing";
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   NotFoundException
 } from "@nestjs/common";
 import { WINSTON_MODULE_PROVIDER } from "nest-winston";
 import { TripsService } from "./trips.service";
 import { TripsRepository } from "./trips.repository";
 import { ItineraryRepository } from "./itinerary/itinerary.repository";
+import { TripAccessService } from "./trip-access.service";
 
 const mockItineraryRepository = {
   findMaxDayNumber: jest.fn()
@@ -15,8 +17,8 @@ const mockItineraryRepository = {
 
 const mockTripsRepository = {
   create: jest.fn(),
-  findByIdAndUser: jest.fn(),
-  findManyByUser: jest.fn(),
+  findByIdForUser: jest.fn(),
+  findManyForUser: jest.fn(),
   update: jest.fn(),
   delete: jest.fn()
 };
@@ -35,6 +37,15 @@ const trip = {
   updatedAt: new Date("2026-10-01T00:00:00.000Z")
 };
 
+// trip as loaded for its owner / for a collaborator
+const ownedTrip = { ...trip, members: [] };
+// trip owned by someone else where the user is a collaborator
+const asMember = (role: "EDITOR" | "VIEWER") => ({
+  ...trip,
+  userId: "other-owner",
+  members: [{ role }]
+});
+
 const tripResponse = {
   id: "t1",
   title: "Bali",
@@ -42,6 +53,7 @@ const tripResponse = {
   description: null,
   startDate: "2026-11-01",
   endDate: "2026-11-05",
+  role: "OWNER",
   createdAt: trip.createdAt,
   updatedAt: trip.updatedAt
 };
@@ -55,6 +67,7 @@ describe("TripsService", () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TripsService,
+        TripAccessService,
         { provide: TripsRepository, useValue: mockTripsRepository },
         { provide: ItineraryRepository, useValue: mockItineraryRepository },
         { provide: WINSTON_MODULE_PROVIDER, useValue: mockLogger }
@@ -91,20 +104,20 @@ describe("TripsService", () => {
 
   describe("findAll", () => {
     it("should paginate trips of user", async () => {
-      mockTripsRepository.findManyByUser.mockResolvedValue({
-        items: [trip],
+      mockTripsRepository.findManyForUser.mockResolvedValue({
+        items: [ownedTrip, asMember("VIEWER")],
         total: 21
       });
 
       const result = await service.findAll("u1", { page: 2, limit: 10 });
 
-      expect(mockTripsRepository.findManyByUser).toHaveBeenCalledWith(
+      expect(mockTripsRepository.findManyForUser).toHaveBeenCalledWith(
         "u1",
         10,
         10
       );
       expect(result).toEqual({
-        items: [tripResponse],
+        items: [tripResponse, { ...tripResponse, role: "VIEWER" }],
         meta: { page: 2, limit: 10, total: 21, totalPages: 3 }
       });
     });
@@ -112,17 +125,25 @@ describe("TripsService", () => {
 
   describe("findOne", () => {
     it("should return trip owned by user", async () => {
-      mockTripsRepository.findByIdAndUser.mockResolvedValue(trip);
+      mockTripsRepository.findByIdForUser.mockResolvedValue(ownedTrip);
 
       await expect(service.findOne("u1", "t1")).resolves.toEqual(tripResponse);
-      expect(mockTripsRepository.findByIdAndUser).toHaveBeenCalledWith(
+      expect(mockTripsRepository.findByIdForUser).toHaveBeenCalledWith(
         "t1",
         "u1"
       );
     });
 
-    it("should throw NotFoundException when trip is not owned", async () => {
-      mockTripsRepository.findByIdAndUser.mockResolvedValue(null);
+    it("should return trip with role of a collaborator", async () => {
+      mockTripsRepository.findByIdForUser.mockResolvedValue(asMember("VIEWER"));
+
+      const result = await service.findOne("u2", "t1");
+
+      expect(result.role).toBe("VIEWER");
+    });
+
+    it("should throw NotFoundException when user has no access", async () => {
+      mockTripsRepository.findByIdForUser.mockResolvedValue(null);
 
       await expect(service.findOne("u2", "t1")).rejects.toBeInstanceOf(
         NotFoundException
@@ -132,7 +153,7 @@ describe("TripsService", () => {
 
   describe("update", () => {
     it("should update only provided fields", async () => {
-      mockTripsRepository.findByIdAndUser.mockResolvedValue(trip);
+      mockTripsRepository.findByIdForUser.mockResolvedValue(ownedTrip);
       mockTripsRepository.update.mockResolvedValue({
         ...trip,
         title: "Lombok"
@@ -146,8 +167,26 @@ describe("TripsService", () => {
       expect(result.title).toBe("Lombok");
     });
 
+    it("should allow editor to update", async () => {
+      mockTripsRepository.findByIdForUser.mockResolvedValue(asMember("EDITOR"));
+      mockTripsRepository.update.mockResolvedValue(trip);
+
+      const result = await service.update("u2", "t1", { title: "x" });
+
+      expect(result.role).toBe("EDITOR");
+    });
+
+    it("should forbid viewer to update", async () => {
+      mockTripsRepository.findByIdForUser.mockResolvedValue(asMember("VIEWER"));
+
+      await expect(
+        service.update("u2", "t1", { title: "x" })
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(mockTripsRepository.update).not.toHaveBeenCalled();
+    });
+
     it("should reject end date before stored start date", async () => {
-      mockTripsRepository.findByIdAndUser.mockResolvedValue(trip);
+      mockTripsRepository.findByIdForUser.mockResolvedValue(ownedTrip);
 
       await expect(
         service.update("u1", "t1", { endDate: "2026-10-30" })
@@ -157,7 +196,7 @@ describe("TripsService", () => {
 
     it("should reject shortening trip below last planned day", async () => {
       // trip is 5 days, itinerary has items on day 4
-      mockTripsRepository.findByIdAndUser.mockResolvedValue(trip);
+      mockTripsRepository.findByIdForUser.mockResolvedValue(ownedTrip);
       mockItineraryRepository.findMaxDayNumber.mockResolvedValue(4);
 
       await expect(
@@ -167,7 +206,7 @@ describe("TripsService", () => {
     });
 
     it("should allow shifting trip dates keeping its length", async () => {
-      mockTripsRepository.findByIdAndUser.mockResolvedValue(trip);
+      mockTripsRepository.findByIdForUser.mockResolvedValue(ownedTrip);
       mockItineraryRepository.findMaxDayNumber.mockResolvedValue(5);
       mockTripsRepository.update.mockResolvedValue(trip);
 
@@ -180,7 +219,7 @@ describe("TripsService", () => {
     });
 
     it("should throw NotFoundException when trip is not owned", async () => {
-      mockTripsRepository.findByIdAndUser.mockResolvedValue(null);
+      mockTripsRepository.findByIdForUser.mockResolvedValue(null);
 
       await expect(
         service.update("u2", "t1", { title: "x" })
@@ -191,15 +230,24 @@ describe("TripsService", () => {
 
   describe("remove", () => {
     it("should delete trip owned by user", async () => {
-      mockTripsRepository.findByIdAndUser.mockResolvedValue(trip);
+      mockTripsRepository.findByIdForUser.mockResolvedValue(ownedTrip);
 
       await service.remove("u1", "t1");
 
       expect(mockTripsRepository.delete).toHaveBeenCalledWith("t1");
     });
 
+    it("should forbid editor to delete trip", async () => {
+      mockTripsRepository.findByIdForUser.mockResolvedValue(asMember("EDITOR"));
+
+      await expect(service.remove("u2", "t1")).rejects.toBeInstanceOf(
+        ForbiddenException
+      );
+      expect(mockTripsRepository.delete).not.toHaveBeenCalled();
+    });
+
     it("should throw NotFoundException when trip is not owned", async () => {
-      mockTripsRepository.findByIdAndUser.mockResolvedValue(null);
+      mockTripsRepository.findByIdForUser.mockResolvedValue(null);
 
       await expect(service.remove("u2", "t1")).rejects.toBeInstanceOf(
         NotFoundException

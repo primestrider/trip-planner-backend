@@ -2,13 +2,13 @@ import {
   BadRequestException,
   ConflictException,
   Inject,
-  Injectable,
-  NotFoundException
+  Injectable
 } from "@nestjs/common";
 import { Trip } from "@prisma/client";
 import { WINSTON_MODULE_PROVIDER } from "nest-winston";
 import { Logger } from "winston";
 import { TripsRepository } from "./trips.repository";
+import { roleOf, TripAccessService, TripRole } from "./trip-access.service";
 import { TripListResponse, TripResponse } from "./models";
 import {
   CreateTripDto,
@@ -20,18 +20,19 @@ import { countDaysInclusive, toDate, toDateString } from "src/utils/date";
 
 /**
  * TripsService contains business logic for managing trips
- * owned by the authenticated user.
+ * the authenticated user owns or collaborates on.
  */
 @Injectable()
 export class TripsService {
   constructor(
     private readonly tripsRepository: TripsRepository,
+    private readonly tripAccess: TripAccessService,
     private readonly itineraryRepository: ItineraryRepository,
     @Inject(WINSTON_MODULE_PROVIDER)
     private readonly logger: Logger
   ) {}
 
-  private toResponse(trip: Trip): TripResponse {
+  private toResponse(trip: Trip, role: TripRole): TripResponse {
     return {
       id: trip.id,
       title: trip.title,
@@ -39,27 +40,10 @@ export class TripsService {
       description: trip.description,
       startDate: toDateString(trip.startDate),
       endDate: toDateString(trip.endDate),
+      role,
       createdAt: trip.createdAt,
       updatedAt: trip.updatedAt
     };
-  }
-
-  /**
-   * Load a trip owned by the user.
-   *
-   * Trips of other users are reported as not found
-   * so their existence is not leaked.
-   *
-   * @throws NotFoundException
-   */
-  async findOwnedTrip(userId: string, tripId: string): Promise<Trip> {
-    const trip = await this.tripsRepository.findByIdAndUser(tripId, userId);
-
-    if (!trip) {
-      throw new NotFoundException("Trip not found");
-    }
-
-    return trip;
   }
 
   async create(userId: string, payload: CreateTripDto): Promise<TripResponse> {
@@ -74,7 +58,7 @@ export class TripsService {
 
     this.logger.info("Trip created", { userId, tripId: trip.id });
 
-    return this.toResponse(trip);
+    return this.toResponse(trip, "OWNER");
   }
 
   async findAll(
@@ -83,14 +67,14 @@ export class TripsService {
   ): Promise<TripListResponse> {
     const { page, limit } = query;
 
-    const { items, total } = await this.tripsRepository.findManyByUser(
+    const { items, total } = await this.tripsRepository.findManyForUser(
       userId,
       (page - 1) * limit,
       limit
     );
 
     return {
-      items: items.map((trip) => this.toResponse(trip)),
+      items: items.map((trip) => this.toResponse(trip, roleOf(trip, userId))),
       meta: {
         page,
         limit,
@@ -101,14 +85,15 @@ export class TripsService {
   }
 
   async findOne(userId: string, tripId: string): Promise<TripResponse> {
-    const trip = await this.findOwnedTrip(userId, tripId);
-    return this.toResponse(trip);
+    const { trip, role } = await this.tripAccess.getTrip(userId, tripId);
+    return this.toResponse(trip, role);
   }
 
   /**
-   * Partially update a trip.
+   * Partially update a trip. Requires EDITOR access.
    *
-   * @throws NotFoundException if trip is not owned by user
+   * @throws NotFoundException if user has no access to the trip
+   * @throws ForbiddenException if user is only a viewer
    * @throws BadRequestException if resulting date range is invalid
    */
   async update(
@@ -116,7 +101,11 @@ export class TripsService {
     tripId: string,
     payload: UpdateTripDto
   ): Promise<TripResponse> {
-    const trip = await this.findOwnedTrip(userId, tripId);
+    const { trip, role } = await this.tripAccess.getTrip(
+      userId,
+      tripId,
+      "EDITOR"
+    );
 
     // validate against stored dates when only one side is changed
     const startDate = payload.startDate ?? toDateString(trip.startDate);
@@ -157,11 +146,14 @@ export class TripsService {
 
     this.logger.info("Trip updated", { userId, tripId });
 
-    return this.toResponse(updated);
+    return this.toResponse(updated, role);
   }
 
+  /**
+   * Delete a trip. Only the owner can delete it.
+   */
   async remove(userId: string, tripId: string): Promise<void> {
-    const trip = await this.findOwnedTrip(userId, tripId);
+    const { trip } = await this.tripAccess.getTrip(userId, tripId, "OWNER");
 
     await this.tripsRepository.delete(trip.id);
 

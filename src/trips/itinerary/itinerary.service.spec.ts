@@ -1,12 +1,16 @@
 import { Test, TestingModule } from "@nestjs/testing";
-import { BadRequestException, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException
+} from "@nestjs/common";
 import { WINSTON_MODULE_PROVIDER } from "nest-winston";
 import { ItineraryService } from "./itinerary.service";
 import { ItineraryRepository } from "./itinerary.repository";
-import { TripsService } from "../trips.service";
+import { TripAccessService } from "../trip-access.service";
 
-const mockTripsService = {
-  findOwnedTrip: jest.fn()
+const mockTripAccess = {
+  getTrip: jest.fn()
 };
 
 const mockItineraryRepository = {
@@ -61,18 +65,18 @@ describe("ItineraryService", () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ItineraryService,
-        { provide: TripsService, useValue: mockTripsService },
+        { provide: TripAccessService, useValue: mockTripAccess },
         { provide: ItineraryRepository, useValue: mockItineraryRepository },
         { provide: WINSTON_MODULE_PROVIDER, useValue: mockLogger }
       ]
     }).compile();
 
     service = module.get<ItineraryService>(ItineraryService);
-    mockTripsService.findOwnedTrip.mockResolvedValue(trip);
+    mockTripAccess.getTrip.mockResolvedValue({ trip, role: "OWNER" });
   });
 
   it("should propagate NotFoundException when trip is not owned", async () => {
-    mockTripsService.findOwnedTrip.mockRejectedValue(
+    mockTripAccess.getTrip.mockRejectedValue(
       new NotFoundException("Trip not found")
     );
 
@@ -80,6 +84,30 @@ describe("ItineraryService", () => {
       NotFoundException
     );
     expect(mockItineraryRepository.findManyByTrip).not.toHaveBeenCalled();
+  });
+
+  it("should require EDITOR access to change itinerary", async () => {
+    mockTripAccess.getTrip.mockRejectedValue(new ForbiddenException());
+    mockItineraryRepository.findByIdAndTrip.mockResolvedValue(makeItem());
+
+    await expect(
+      service.createItem("u2", "t1", { dayNumber: 1, title: "x" })
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(
+      service.updateItem("u2", "t1", "i1", { title: "x" })
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.deleteItem("u2", "t1", "i1")).rejects.toBeInstanceOf(
+      ForbiddenException
+    );
+
+    expect(mockTripAccess.getTrip.mock.calls).toEqual([
+      ["u2", "t1", "EDITOR"],
+      ["u2", "t1", "EDITOR"],
+      ["u2", "t1", "EDITOR"]
+    ]);
+    expect(mockItineraryRepository.create).not.toHaveBeenCalled();
+    expect(mockItineraryRepository.update).not.toHaveBeenCalled();
+    expect(mockItineraryRepository.delete).not.toHaveBeenCalled();
   });
 
   describe("getItinerary", () => {
@@ -91,7 +119,7 @@ describe("ItineraryService", () => {
 
       const result = await service.getItinerary("u1", "t1");
 
-      expect(mockTripsService.findOwnedTrip).toHaveBeenCalledWith("u1", "t1");
+      expect(mockTripAccess.getTrip).toHaveBeenCalledWith("u1", "t1");
       expect(result.totalDays).toBe(3);
       expect(
         result.days.map((day) => [

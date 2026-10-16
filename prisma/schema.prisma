@@ -30,8 +30,9 @@ model User {
   avatarId Int?
   avatar   Avatar? @relation(fields: [avatarId], references: [id])
 
-  accessTokens UserAccessToken[]
-  trips        Trip[]
+  accessTokens    UserAccessToken[]
+  trips           Trip[]
+  tripMemberships TripMember[]
 
   createdAt DateTime  @default(now()) @db.Timestamp(0)
   updatedAt DateTime  @updatedAt @db.Timestamp(0)
@@ -88,12 +89,38 @@ model Trip {
   endDate   DateTime @db.Date
 
   itineraryItems ItineraryItem[]
+  members        TripMember[]
 
   createdAt DateTime @default(now()) @db.Timestamp(0)
   updatedAt DateTime @updatedAt @db.Timestamp(0)
 
   @@index([userId, startDate])
   @@map("trips")
+}
+
+// Role of a collaborator; the trip owner is Trip.userId
+enum TripMemberRole {
+  EDITOR
+  VIEWER
+}
+
+model TripMember {
+  id String @id @default(uuid())
+
+  tripId String
+  trip   Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  role TripMemberRole
+
+  createdAt DateTime @default(now()) @db.Timestamp(0)
+  updatedAt DateTime @updatedAt @db.Timestamp(0)
+
+  @@unique([tripId, userId])
+  @@index([userId])
+  @@map("trip_members")
 }
 
 model ItineraryItem {

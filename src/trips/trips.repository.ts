@@ -3,11 +3,33 @@ import { Prisma, Trip } from "@prisma/client";
 import { PrismaService } from "../common/prisma.service";
 
 /**
+ * Trip with the membership of one user (empty when the user is the owner
+ * or not a member), used to resolve that user's role on the trip.
+ */
+export type TripWithMembership = Prisma.TripGetPayload<{
+  include: { members: { select: { role: true } } };
+}>;
+
+/**
+ * Trips the user owns or is a member of
+ */
+function accessibleBy(userId: string): Prisma.TripWhereInput {
+  return {
+    OR: [{ userId }, { members: { some: { userId } } }]
+  };
+}
+
+function membershipOf(userId: string) {
+  return {
+    members: { where: { userId }, select: { role: true } }
+  } satisfies Prisma.TripInclude;
+}
+
+/**
  * TripsRepository
  *
  * Repository responsible for interacting with the `trips` table.
- * Every query is scoped by `userId` so a user can only reach
- * their own trips.
+ * Read queries are scoped to trips the user owns or is a member of.
  */
 @Injectable()
 export class TripsRepository {
@@ -21,31 +43,37 @@ export class TripsRepository {
   }
 
   /**
-   * Find a trip owned by the user.
+   * Find a trip the user can access, with the user's membership.
    *
    * @returns Trip record if found, otherwise `null`
    */
-  async findByIdAndUser(tripId: string, userId: string): Promise<Trip | null> {
+  async findByIdForUser(
+    tripId: string,
+    userId: string
+  ): Promise<TripWithMembership | null> {
     return this.prisma.trip.findFirst({
-      where: { id: tripId, userId }
+      where: { id: tripId, ...accessibleBy(userId) },
+      include: membershipOf(userId)
     });
   }
 
   /**
-   * List trips owned by the user, ordered by start date (newest first).
+   * List trips the user owns or is a member of,
+   * ordered by start date (newest first).
    *
    * @returns Page of trips and total count
    */
-  async findManyByUser(
+  async findManyForUser(
     userId: string,
     skip: number,
     take: number
-  ): Promise<{ items: Trip[]; total: number }> {
-    const where: Prisma.TripWhereInput = { userId };
+  ): Promise<{ items: TripWithMembership[]; total: number }> {
+    const where = accessibleBy(userId);
 
     const [items, total] = await this.prisma.$transaction([
       this.prisma.trip.findMany({
         where,
+        include: membershipOf(userId),
         orderBy: [{ startDate: "desc" }, { createdAt: "desc" }],
         skip,
         take

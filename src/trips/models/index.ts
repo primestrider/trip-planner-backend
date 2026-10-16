@@ -1,3 +1,5 @@
+import { TripRole } from "../trip-access.service";
+
 /**
  * Trip returned to clients.
  * Dates are formatted as YYYY-MM-DD.
@@ -9,6 +11,8 @@ export type TripResponse = {
   description: string | null;
   startDate: string;
   endDate: string;
+  // role of the current user on this trip
+  role: TripRole;
   createdAt: Date;
   updatedAt: Date;
 };
