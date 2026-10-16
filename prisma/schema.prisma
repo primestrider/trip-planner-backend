@@ -90,6 +90,8 @@ model Trip {
 
   itineraryItems ItineraryItem[]
   members        TripMember[]
+  accommodations TripAccommodation[]
+  transports     TripTransport[]
 
   createdAt DateTime @default(now()) @db.Timestamp(0)
   updatedAt DateTime @updatedAt @db.Timestamp(0)
@@ -152,4 +154,81 @@ model ItineraryItem {
 
   @@index([tripId, dayNumber])
   @@map("itinerary_items")
+}
+
+model TripAccommodation {
+  id String @id @default(uuid())
+
+  tripId String
+  trip   Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  name String @db.VarChar(150)
+
+  // place, typically picked from Google Maps
+  locationName      String?  @db.VarChar(255)
+  locationAddress   String?  @db.VarChar(500)
+  locationLatitude  Decimal? @db.Decimal(9, 6)
+  locationLongitude Decimal? @db.Decimal(9, 6)
+  locationPlaceId   String?  @db.VarChar(255)
+  locationUrl       String?  @db.VarChar(2048)
+
+  checkInDate  DateTime @db.Date
+  checkOutDate DateTime @db.Date
+
+  bookingCode String? @db.VarChar(100)
+  notes       String? @db.Text
+
+  createdAt DateTime @default(now()) @db.Timestamp(0)
+  updatedAt DateTime @updatedAt @db.Timestamp(0)
+
+  @@index([tripId, checkInDate])
+  @@map("trip_accommodations")
+}
+
+enum TransportType {
+  FLIGHT
+  TRAIN
+  BUS
+  CAR
+  FERRY
+  OTHER
+}
+
+model TripTransport {
+  id String @id @default(uuid())
+
+  tripId String
+  trip   Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  type    TransportType
+  // airline / operator, and flight or train number
+  carrier String?       @db.VarChar(100)
+  number  String?       @db.VarChar(50)
+
+  originName      String?  @db.VarChar(255)
+  originAddress   String?  @db.VarChar(500)
+  originLatitude  Decimal? @db.Decimal(9, 6)
+  originLongitude Decimal? @db.Decimal(9, 6)
+  originPlaceId   String?  @db.VarChar(255)
+  originUrl       String?  @db.VarChar(2048)
+
+  destinationName      String?  @db.VarChar(255)
+  destinationAddress   String?  @db.VarChar(500)
+  destinationLatitude  Decimal? @db.Decimal(9, 6)
+  destinationLongitude Decimal? @db.Decimal(9, 6)
+  destinationPlaceId   String?  @db.VarChar(255)
+  destinationUrl       String?  @db.VarChar(2048)
+
+  // local time at origin / destination, stored without timezone conversion
+  departureAt DateTime  @db.DateTime(0)
+  arrivalAt   DateTime? @db.DateTime(0)
+
+  bookingCode String? @db.VarChar(100)
+  notes       String? @db.Text
+
+  createdAt DateTime @default(now()) @db.Timestamp(0)
+  updatedAt DateTime @updatedAt @db.Timestamp(0)
+
+  @@index([tripId, departureAt])
+  @@map("trip_transports")
 }

@@ -10,10 +10,22 @@ import { ItineraryRepository } from "./itinerary/itinerary.repository";
 import { MembersController } from "./members/members.controller";
 import { MembersService } from "./members/members.service";
 import { MembersRepository } from "./members/members.repository";
+import { AccommodationsController } from "./accommodations/accommodations.controller";
+import { AccommodationsService } from "./accommodations/accommodations.service";
+import { AccommodationsRepository } from "./accommodations/accommodations.repository";
+import { TransportsController } from "./transports/transports.controller";
+import { TransportsService } from "./transports/transports.service";
+import { TransportsRepository } from "./transports/transports.repository";
 
 @Module({
   imports: [UsersModule],
-  controllers: [TripsController, ItineraryController, MembersController],
+  controllers: [
+    TripsController,
+    ItineraryController,
+    MembersController,
+    AccommodationsController,
+    TransportsController
+  ],
   providers: [
     TripsService,
     TripsRepository,
@@ -21,7 +33,11 @@ import { MembersRepository } from "./members/members.repository";
     ItineraryService,
     ItineraryRepository,
     MembersService,
-    MembersRepository
+    MembersRepository,
+    AccommodationsService,
+    AccommodationsRepository,
+    TransportsService,
+    TransportsRepository
   ]
 })
 export class TripsModule {}
