@@ -31,6 +31,7 @@ model User {
   avatar   Avatar? @relation(fields: [avatarId], references: [id])
 
   accessTokens UserAccessToken[]
+  trips        Trip[]
 
   createdAt DateTime  @default(now()) @db.Timestamp(0)
   updatedAt DateTime  @updatedAt @db.Timestamp(0)
@@ -71,4 +72,57 @@ model Avatar {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model Trip {
+  id String @id @default(uuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title       String  @db.VarChar(150)
+  destination String  @db.VarChar(150)
+  description String? @db.Text
+
+  startDate DateTime @db.Date
+  endDate   DateTime @db.Date
+
+  itineraryItems ItineraryItem[]
+
+  createdAt DateTime @default(now()) @db.Timestamp(0)
+  updatedAt DateTime @updatedAt @db.Timestamp(0)
+
+  @@index([userId, startDate])
+  @@map("trips")
+}
+
+model ItineraryItem {
+  id String @id @default(uuid())
+
+  tripId String
+  trip   Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  // 1-based day of the trip (Day 1 = trip startDate)
+  dayNumber Int
+
+  title       String  @db.VarChar(150)
+  description String? @db.Text
+
+  // place, typically picked from Google Maps
+  locationName      String?  @db.VarChar(255)
+  locationAddress   String?  @db.VarChar(500)
+  locationLatitude  Decimal? @db.Decimal(9, 6)
+  locationLongitude Decimal? @db.Decimal(9, 6)
+  locationPlaceId   String?  @db.VarChar(255)
+  locationUrl       String?  @db.VarChar(2048)
+
+  // HH:mm (24h)
+  startTime String? @db.VarChar(5)
+  endTime   String? @db.VarChar(5)
+
+  createdAt DateTime @default(now()) @db.Timestamp(0)
+  updatedAt DateTime @updatedAt @db.Timestamp(0)
+
+  @@index([tripId, dayNumber])
+  @@map("itinerary_items")
 }
