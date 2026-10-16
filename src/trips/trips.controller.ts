@@ -1,5 +1,4 @@
 import {
-  Body,
   Controller,
   Delete,
   Get,
@@ -9,13 +8,13 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
-  Query,
   UseGuards
 } from "@nestjs/common";
+import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import { ZodBody, ZodQuery } from "src/common/validation/zod.decorators";
 import { TripsService } from "./trips.service";
 import { AccessTokenGuard } from "src/auth/guards/access-token.guard";
 import { CurrentUser } from "src/common/decorator/current-user.decorator";
-import { ValidationPipe } from "src/common/validation/validation.pipe";
 import {
   type CreateTripDto,
   type DuplicateTripDto,
@@ -28,7 +27,9 @@ import {
 } from "./trips.validation";
 import { type TripListResponse, type TripResponse } from "./models";
 
+@ApiTags("trips")
 @Controller("trips")
+@ApiBearerAuth()
 @UseGuards(AccessTokenGuard)
 export class TripsController {
   constructor(private readonly tripsService: TripsService) {}
@@ -41,7 +42,7 @@ export class TripsController {
   @HttpCode(HttpStatus.CREATED)
   async create(
     @CurrentUser("sub") userId: string,
-    @Body(ValidationPipe(CreateTripSchema)) body: CreateTripDto
+    @ZodBody(CreateTripSchema) body: CreateTripDto
   ): Promise<TripResponse> {
     return this.tripsService.create(userId, body);
   }
@@ -53,7 +54,7 @@ export class TripsController {
   @Get()
   async findAll(
     @CurrentUser("sub") userId: string,
-    @Query(ValidationPipe(ListTripsQuerySchema)) query: ListTripsQuery
+    @ZodQuery(ListTripsQuerySchema) query: ListTripsQuery
   ): Promise<TripListResponse> {
     return this.tripsService.findAll(userId, query);
   }
@@ -78,7 +79,7 @@ export class TripsController {
   async update(
     @CurrentUser("sub") userId: string,
     @Param("id", ParseUUIDPipe) tripId: string,
-    @Body(ValidationPipe(UpdateTripSchema)) body: UpdateTripDto
+    @ZodBody(UpdateTripSchema) body: UpdateTripDto
   ): Promise<TripResponse> {
     return this.tripsService.update(userId, tripId, body);
   }
@@ -106,7 +107,7 @@ export class TripsController {
   async duplicate(
     @CurrentUser("sub") userId: string,
     @Param("id", ParseUUIDPipe) tripId: string,
-    @Body(ValidationPipe(DuplicateTripSchema)) body: DuplicateTripDto
+    @ZodBody(DuplicateTripSchema) body: DuplicateTripDto
   ): Promise<TripResponse> {
     return this.tripsService.duplicate(userId, tripId, body);
   }

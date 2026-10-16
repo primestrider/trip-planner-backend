@@ -6,9 +6,10 @@ import {
   Post,
   UseGuards
 } from "@nestjs/common";
+import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import { ZodBody } from "src/common/validation/zod.decorators";
 import { Throttle } from "@nestjs/throttler";
 import { AuthService } from "./auth.service";
-import { ValidationPipe } from "src/common/validation/validation.pipe";
 import {
   type RegisterUserDto,
   type LoginUserDto,
@@ -28,6 +29,7 @@ import { AccessTokenGuard } from "./guards/access-token.guard";
  * Stricter rate limit against credential stuffing / brute force:
  * 10 requests per minute per client IP for every auth route.
  */
+@ApiTags("auth")
 @Controller("authentication")
 @Throttle({ default: { limit: 10, ttl: 60_000 } })
 export class AuthController {
@@ -43,7 +45,7 @@ export class AuthController {
   @Post("register")
   @HttpCode(HttpStatus.CREATED)
   async register(
-    @Body(ValidationPipe(RegisterSchema)) body: RegisterUserDto,
+    @ZodBody(RegisterSchema) body: RegisterUserDto,
     @CurrentDevice() deviceId: string
   ): Promise<AuthUserResponse> {
     const response = await this.authService.register({ ...body, deviceId });
@@ -56,7 +58,7 @@ export class AuthController {
    */
   @Post("login")
   async login(
-    @Body(ValidationPipe(LoginSchema)) body: LoginUserDto,
+    @ZodBody(LoginSchema) body: LoginUserDto,
     @CurrentDevice() deviceId: string
   ): Promise<AuthUserResponse> {
     const response = await this.authService.login({ ...body, deviceId });
@@ -101,6 +103,7 @@ export class AuthController {
    * @returns
    */
   @Post("logout")
+  @ApiBearerAuth()
   @UseGuards(AccessTokenGuard)
   @HttpCode(HttpStatus.OK)
   async logout(
@@ -117,12 +120,13 @@ export class AuthController {
    *  POST /authentication/change-password
    */
   @Post("change-password")
+  @ApiBearerAuth()
   @UseGuards(AccessTokenGuard)
   @HttpCode(HttpStatus.OK)
   async changePassword(
     @CurrentUser("sub") userId: string,
     @CurrentDevice() deviceId: string,
-    @Body(ValidationPipe(ChangePasswordSchema)) body: ChangePasswordDto
+    @ZodBody(ChangePasswordSchema) body: ChangePasswordDto
   ): Promise<AuthUserResponse> {
     return this.authService.changePassword({ ...body, userId, deviceId });
   }

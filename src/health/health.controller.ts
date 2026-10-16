@@ -1,4 +1,5 @@
 import { Controller, Get, ServiceUnavailableException } from "@nestjs/common";
+import { ApiTags } from "@nestjs/swagger";
 import { SkipThrottle } from "@nestjs/throttler";
 import { PrismaService } from "src/common/prisma.service";
 import { SkipDeviceId } from "src/common/decorator/skip-device-id.decorator";
@@ -7,6 +8,7 @@ import { SkipDeviceId } from "src/common/decorator/skip-device-id.decorator";
  * Liveness / readiness check for load balancers and monitoring.
  * Public: no access token, device id, or rate limit.
  */
+@ApiTags("health")
 @Controller("health")
 @SkipDeviceId()
 @SkipThrottle()

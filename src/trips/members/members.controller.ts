@@ -1,5 +1,4 @@
 import {
-  Body,
   Controller,
   Delete,
   Get,
@@ -11,10 +10,11 @@ import {
   Post,
   UseGuards
 } from "@nestjs/common";
+import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import { ZodBody } from "src/common/validation/zod.decorators";
 import { MembersService } from "./members.service";
 import { AccessTokenGuard } from "src/auth/guards/access-token.guard";
 import { CurrentUser } from "src/common/decorator/current-user.decorator";
-import { ValidationPipe } from "src/common/validation/validation.pipe";
 import {
   type AddMemberDto,
   type UpdateMemberDto,
@@ -23,7 +23,9 @@ import {
 } from "./members.validation";
 import { type TripMemberResponse } from "./models";
 
+@ApiTags("members")
 @Controller("trips/:tripId/members")
+@ApiBearerAuth()
 @UseGuards(AccessTokenGuard)
 export class MembersController {
   constructor(private readonly membersService: MembersService) {}
@@ -49,7 +51,7 @@ export class MembersController {
   async add(
     @CurrentUser("sub") userId: string,
     @Param("tripId", ParseUUIDPipe) tripId: string,
-    @Body(ValidationPipe(AddMemberSchema)) body: AddMemberDto
+    @ZodBody(AddMemberSchema) body: AddMemberDto
   ): Promise<TripMemberResponse> {
     return this.membersService.add(userId, tripId, body);
   }
@@ -63,7 +65,7 @@ export class MembersController {
     @CurrentUser("sub") userId: string,
     @Param("tripId", ParseUUIDPipe) tripId: string,
     @Param("userId", ParseUUIDPipe) memberUserId: string,
-    @Body(ValidationPipe(UpdateMemberSchema)) body: UpdateMemberDto
+    @ZodBody(UpdateMemberSchema) body: UpdateMemberDto
   ): Promise<TripMemberResponse> {
     return this.membersService.updateRole(userId, tripId, memberUserId, body);
   }

@@ -1,5 +1,4 @@
 import {
-  Body,
   Controller,
   Delete,
   Get,
@@ -13,10 +12,11 @@ import {
   Put,
   UseGuards
 } from "@nestjs/common";
+import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import { ZodBody } from "src/common/validation/zod.decorators";
 import { ItineraryService } from "./itinerary.service";
 import { AccessTokenGuard } from "src/auth/guards/access-token.guard";
 import { CurrentUser } from "src/common/decorator/current-user.decorator";
-import { ValidationPipe } from "src/common/validation/validation.pipe";
 import {
   type CreateItineraryItemDto,
   type UpdateItineraryItemDto,
@@ -31,7 +31,9 @@ import {
   type ItineraryResponse
 } from "./models";
 
+@ApiTags("itinerary")
 @Controller("trips/:tripId/itinerary")
+@ApiBearerAuth()
 @UseGuards(AccessTokenGuard)
 export class ItineraryController {
   constructor(private readonly itineraryService: ItineraryService) {}
@@ -70,7 +72,7 @@ export class ItineraryController {
     @CurrentUser("sub") userId: string,
     @Param("tripId", ParseUUIDPipe) tripId: string,
     @Param("dayNumber", ParseIntPipe) dayNumber: number,
-    @Body(ValidationPipe(ReorderItineraryDaySchema))
+    @ZodBody(ReorderItineraryDaySchema)
     body: ReorderItineraryDayDto
   ): Promise<ItineraryDayResponse> {
     return this.itineraryService.reorderDay(userId, tripId, dayNumber, body);
@@ -85,7 +87,7 @@ export class ItineraryController {
   async createItem(
     @CurrentUser("sub") userId: string,
     @Param("tripId", ParseUUIDPipe) tripId: string,
-    @Body(ValidationPipe(CreateItineraryItemSchema))
+    @ZodBody(CreateItineraryItemSchema)
     body: CreateItineraryItemDto
   ): Promise<ItineraryItemResponse> {
     return this.itineraryService.createItem(userId, tripId, body);
@@ -100,7 +102,7 @@ export class ItineraryController {
     @CurrentUser("sub") userId: string,
     @Param("tripId", ParseUUIDPipe) tripId: string,
     @Param("itemId", ParseUUIDPipe) itemId: string,
-    @Body(ValidationPipe(UpdateItineraryItemSchema))
+    @ZodBody(UpdateItineraryItemSchema)
     body: UpdateItineraryItemDto
   ): Promise<ItineraryItemResponse> {
     return this.itineraryService.updateItem(userId, tripId, itemId, body);

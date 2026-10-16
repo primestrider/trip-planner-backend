@@ -1,5 +1,4 @@
 import {
-  Body,
   Controller,
   Delete,
   Get,
@@ -10,18 +9,21 @@ import {
   Post,
   UseGuards
 } from "@nestjs/common";
+import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import { ZodBody } from "src/common/validation/zod.decorators";
 import { ShareService } from "./share.service";
 import { AccessTokenGuard } from "src/auth/guards/access-token.guard";
 import { CurrentUser } from "src/common/decorator/current-user.decorator";
 import { SkipDeviceId } from "src/common/decorator/skip-device-id.decorator";
-import { ValidationPipe } from "src/common/validation/validation.pipe";
 import { type EnableShareDto, EnableShareSchema } from "./share.validation";
 import { type PublicTripResponse, type ShareLinkResponse } from "./models";
 
 /**
  * Share link managed by the trip owner
  */
+@ApiTags("share")
 @Controller("trips/:tripId/share")
+@ApiBearerAuth()
 @UseGuards(AccessTokenGuard)
 export class TripShareController {
   constructor(private readonly shareService: ShareService) {}
@@ -47,7 +49,7 @@ export class TripShareController {
   async enable(
     @CurrentUser("sub") userId: string,
     @Param("tripId", ParseUUIDPipe) tripId: string,
-    @Body(ValidationPipe(EnableShareSchema)) body: EnableShareDto
+    @ZodBody(EnableShareSchema) body: EnableShareDto
   ): Promise<ShareLinkResponse> {
     return this.shareService.enable(userId, tripId, body);
   }
@@ -69,6 +71,7 @@ export class TripShareController {
  * Public read-only trip page: no login or device id needed.
  * Still covered by the global rate limit.
  */
+@ApiTags("share")
 @Controller("shared")
 @SkipDeviceId()
 export class SharedTripController {

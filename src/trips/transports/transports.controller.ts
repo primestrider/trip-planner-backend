@@ -1,5 +1,4 @@
 import {
-  Body,
   Controller,
   Delete,
   Get,
@@ -11,10 +10,11 @@ import {
   Post,
   UseGuards
 } from "@nestjs/common";
+import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import { ZodBody } from "src/common/validation/zod.decorators";
 import { TransportsService } from "./transports.service";
 import { AccessTokenGuard } from "src/auth/guards/access-token.guard";
 import { CurrentUser } from "src/common/decorator/current-user.decorator";
-import { ValidationPipe } from "src/common/validation/validation.pipe";
 import {
   type CreateTransportDto,
   type UpdateTransportDto,
@@ -23,7 +23,9 @@ import {
 } from "./transports.validation";
 import { type TransportResponse } from "./models";
 
+@ApiTags("transports")
 @Controller("trips/:tripId/transports")
+@ApiBearerAuth()
 @UseGuards(AccessTokenGuard)
 export class TransportsController {
   constructor(private readonly transportsService: TransportsService) {}
@@ -62,7 +64,7 @@ export class TransportsController {
   async create(
     @CurrentUser("sub") userId: string,
     @Param("tripId", ParseUUIDPipe) tripId: string,
-    @Body(ValidationPipe(CreateTransportSchema))
+    @ZodBody(CreateTransportSchema)
     body: CreateTransportDto
   ): Promise<TransportResponse> {
     return this.transportsService.create(userId, tripId, body);
@@ -77,7 +79,7 @@ export class TransportsController {
     @CurrentUser("sub") userId: string,
     @Param("tripId", ParseUUIDPipe) tripId: string,
     @Param("id", ParseUUIDPipe) transportId: string,
-    @Body(ValidationPipe(UpdateTransportSchema))
+    @ZodBody(UpdateTransportSchema)
     body: UpdateTransportDto
   ): Promise<TransportResponse> {
     return this.transportsService.update(userId, tripId, transportId, body);

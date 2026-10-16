@@ -1,5 +1,4 @@
 import {
-  Body,
   Controller,
   Delete,
   Get,
@@ -9,13 +8,13 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
-  Query,
   UseGuards
 } from "@nestjs/common";
+import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import { ZodBody, ZodQuery } from "src/common/validation/zod.decorators";
 import { ChecklistService } from "./checklist.service";
 import { AccessTokenGuard } from "src/auth/guards/access-token.guard";
 import { CurrentUser } from "src/common/decorator/current-user.decorator";
-import { ValidationPipe } from "src/common/validation/validation.pipe";
 import {
   type CreateChecklistItemDto,
   type ListChecklistQuery,
@@ -26,7 +25,9 @@ import {
 } from "./checklist.validation";
 import { type ChecklistItemResponse, type ChecklistResponse } from "./models";
 
+@ApiTags("checklist")
 @Controller("trips/:tripId/checklist")
+@ApiBearerAuth()
 @UseGuards(AccessTokenGuard)
 export class ChecklistController {
   constructor(private readonly checklistService: ChecklistService) {}
@@ -39,7 +40,7 @@ export class ChecklistController {
   async list(
     @CurrentUser("sub") userId: string,
     @Param("tripId", ParseUUIDPipe) tripId: string,
-    @Query(ValidationPipe(ListChecklistQuerySchema)) query: ListChecklistQuery
+    @ZodQuery(ListChecklistQuerySchema) query: ListChecklistQuery
   ): Promise<ChecklistResponse> {
     return this.checklistService.list(userId, tripId, query);
   }
@@ -53,7 +54,7 @@ export class ChecklistController {
   async create(
     @CurrentUser("sub") userId: string,
     @Param("tripId", ParseUUIDPipe) tripId: string,
-    @Body(ValidationPipe(CreateChecklistItemSchema))
+    @ZodBody(CreateChecklistItemSchema)
     body: CreateChecklistItemDto
   ): Promise<ChecklistItemResponse> {
     return this.checklistService.create(userId, tripId, body);
@@ -68,7 +69,7 @@ export class ChecklistController {
     @CurrentUser("sub") userId: string,
     @Param("tripId", ParseUUIDPipe) tripId: string,
     @Param("itemId", ParseUUIDPipe) itemId: string,
-    @Body(ValidationPipe(UpdateChecklistItemSchema))
+    @ZodBody(UpdateChecklistItemSchema)
     body: UpdateChecklistItemDto
   ): Promise<ChecklistItemResponse> {
     return this.checklistService.update(userId, tripId, itemId, body);
