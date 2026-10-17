@@ -72,7 +72,9 @@ export class ExpensesRepository {
         include: paidBySelect,
         orderBy: [
           { spentDate: { sort: "desc", nulls: "last" } },
-          { createdAt: "desc" }
+          { createdAt: "desc" },
+          // unique order so offset pages never repeat or skip rows
+          { id: "desc" }
         ],
         skip,
         take
