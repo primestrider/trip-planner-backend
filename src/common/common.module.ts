@@ -32,7 +32,9 @@ import { ValidationService } from "./validation/validation.service";
     WinstonModule.forRoot({
       level: "debug",
       format: winston.format.json(),
-      transports: [new winston.transports.Console()]
+      transports: [new winston.transports.Console()],
+      // keep e2e test output readable
+      silent: process.env.NODE_ENV === "test"
     }),
 
     /**
