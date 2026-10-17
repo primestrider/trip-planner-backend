@@ -10,6 +10,8 @@ export type ItineraryItemResponse = {
   location: LocationResponse | null;
   startTime: string | null;
   endTime: string | null;
+  // send back as If-Match when updating or deleting to avoid lost updates
+  version: number;
   createdAt: Date;
   updatedAt: Date;
 };

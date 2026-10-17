@@ -2,7 +2,8 @@ import {
   BadRequestException,
   Inject,
   Injectable,
-  NotFoundException
+  NotFoundException,
+  PreconditionFailedException
 } from "@nestjs/common";
 import {
   ItineraryItem,
@@ -67,6 +68,7 @@ export class ItineraryService {
       startTime: item.startTime,
       endTime: item.endTime,
       createdAt: item.createdAt,
+      version: item.version,
       updatedAt: item.updatedAt
     };
   }
@@ -89,6 +91,23 @@ export class ItineraryService {
       throw new BadRequestException(
         `Day must be between 1 and ${totalDays} for this trip`
       );
+    }
+  }
+
+  private versionConflict(): PreconditionFailedException {
+    return new PreconditionFailedException(
+      "Item was changed by someone else; reload it and try again"
+    );
+  }
+
+  /**
+   * Fail fast when the client edits an outdated copy of the item.
+   *
+   * @throws PreconditionFailedException (412)
+   */
+  private ensureVersion(item: ItineraryItem, expectedVersion?: number): void {
+    if (expectedVersion !== undefined && item.version !== expectedVersion) {
+      throw this.versionConflict();
     }
   }
 
@@ -271,10 +290,12 @@ export class ItineraryService {
     userId: string,
     tripId: string,
     itemId: string,
-    payload: UpdateItineraryItemDto
+    payload: UpdateItineraryItemDto,
+    expectedVersion?: number
   ): Promise<ItineraryItemResponse> {
     const { trip } = await this.tripAccess.getTrip(userId, tripId, "EDITOR");
     const item = await this.findItem(trip.id, itemId);
+    this.ensureVersion(item, expectedVersion);
 
     const movesDay =
       payload.dayNumber !== undefined && payload.dayNumber !== item.dayNumber;
@@ -293,25 +314,36 @@ export class ItineraryService {
       throw new BadRequestException("End time must be on or after start time");
     }
 
-    const updated = await this.itineraryRepository.update(item.id, {
-      // an item moved to another day goes to the end of that day
-      ...(movesDay && {
-        dayNumber: payload.dayNumber,
-        position: await this.itineraryRepository.nextPosition(
-          trip.id,
-          payload.dayNumber!
-        )
-      }),
-      ...(payload.title !== undefined && { title: payload.title }),
-      ...(payload.description !== undefined && {
-        description: payload.description
-      }),
-      // location is replaced as a whole; `null` clears it
-      ...(payload.location !== undefined &&
-        toLocationColumns(payload.location)),
-      ...(payload.startTime !== undefined && { startTime: payload.startTime }),
-      ...(payload.endTime !== undefined && { endTime: payload.endTime })
-    });
+    const updated = await this.itineraryRepository.update(
+      item.id,
+      {
+        // an item moved to another day goes to the end of that day
+        ...(movesDay && {
+          dayNumber: payload.dayNumber,
+          position: await this.itineraryRepository.nextPosition(
+            trip.id,
+            payload.dayNumber!
+          )
+        }),
+        ...(payload.title !== undefined && { title: payload.title }),
+        ...(payload.description !== undefined && {
+          description: payload.description
+        }),
+        // location is replaced as a whole; `null` clears it
+        ...(payload.location !== undefined &&
+          toLocationColumns(payload.location)),
+        ...(payload.startTime !== undefined && {
+          startTime: payload.startTime
+        }),
+        ...(payload.endTime !== undefined && { endTime: payload.endTime })
+      },
+      expectedVersion
+    );
+
+    // changed by someone else between our read and write
+    if (!updated) {
+      throw this.versionConflict();
+    }
 
     this.logger.info("Itinerary item updated", { userId, tripId, itemId });
 
@@ -321,12 +353,16 @@ export class ItineraryService {
   async deleteItem(
     userId: string,
     tripId: string,
-    itemId: string
+    itemId: string,
+    expectedVersion?: number
   ): Promise<void> {
     const { trip } = await this.tripAccess.getTrip(userId, tripId, "EDITOR");
     const item = await this.findItem(trip.id, itemId);
+    this.ensureVersion(item, expectedVersion);
 
-    await this.itineraryRepository.delete(item.id);
+    if (!(await this.itineraryRepository.delete(item.id, expectedVersion))) {
+      throw this.versionConflict();
+    }
 
     this.logger.info("Itinerary item deleted", { userId, tripId, itemId });
 

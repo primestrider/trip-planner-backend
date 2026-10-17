@@ -2,6 +2,7 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Param,
@@ -12,7 +13,15 @@ import {
   Put,
   UseGuards
 } from "@nestjs/common";
-import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import { ApiBearerAuth, ApiHeader, ApiTags } from "@nestjs/swagger";
+import { parseIfMatch } from "src/common/http/if-match";
+
+const IF_MATCH_HEADER = {
+  name: "If-Match",
+  required: false,
+  description:
+    'Item version you edited, e.g. "3". Returns 412 if someone changed the item since.'
+};
 import { ZodBody } from "src/common/validation/zod.decorators";
 import { ItineraryService } from "./itinerary.service";
 import { AccessTokenGuard } from "src/auth/guards/access-token.guard";
@@ -98,14 +107,22 @@ export class ItineraryController {
    *  PATCH /trips/:tripId/itinerary/:itemId
    */
   @Patch(":itemId")
+  @ApiHeader(IF_MATCH_HEADER)
   async updateItem(
     @CurrentUser("sub") userId: string,
     @Param("tripId", ParseUUIDPipe) tripId: string,
     @Param("itemId", ParseUUIDPipe) itemId: string,
     @ZodBody(UpdateItineraryItemSchema)
-    body: UpdateItineraryItemDto
+    body: UpdateItineraryItemDto,
+    @Headers("if-match") ifMatch?: string
   ): Promise<ItineraryItemResponse> {
-    return this.itineraryService.updateItem(userId, tripId, itemId, body);
+    return this.itineraryService.updateItem(
+      userId,
+      tripId,
+      itemId,
+      body,
+      parseIfMatch(ifMatch)
+    );
   }
 
   /**
@@ -114,12 +131,19 @@ export class ItineraryController {
    */
   @Delete(":itemId")
   @HttpCode(HttpStatus.OK)
+  @ApiHeader(IF_MATCH_HEADER)
   async deleteItem(
     @CurrentUser("sub") userId: string,
     @Param("tripId", ParseUUIDPipe) tripId: string,
-    @Param("itemId", ParseUUIDPipe) itemId: string
+    @Param("itemId", ParseUUIDPipe) itemId: string,
+    @Headers("if-match") ifMatch?: string
   ): Promise<null> {
-    await this.itineraryService.deleteItem(userId, tripId, itemId);
+    await this.itineraryService.deleteItem(
+      userId,
+      tripId,
+      itemId,
+      parseIfMatch(ifMatch)
+    );
     return null;
   }
 }

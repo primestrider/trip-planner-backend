@@ -2,7 +2,8 @@ import { Test, TestingModule } from "@nestjs/testing";
 import {
   BadRequestException,
   ForbiddenException,
-  NotFoundException
+  NotFoundException,
+  PreconditionFailedException
 } from "@nestjs/common";
 import { WINSTON_MODULE_PROVIDER } from "nest-winston";
 import { ItineraryService } from "./itinerary.service";
@@ -62,6 +63,7 @@ const makeItem = (overrides: Record<string, unknown> = {}) => ({
   locationUrl: null,
   startTime: "09:00",
   endTime: "11:00",
+  version: 1,
   createdAt: new Date("2026-10-01T00:00:00.000Z"),
   updatedAt: new Date("2026-10-01T00:00:00.000Z"),
   ...overrides
@@ -346,10 +348,14 @@ describe("ItineraryService", () => {
         "t1",
         3
       );
-      expect(mockItineraryRepository.update).toHaveBeenCalledWith("i1", {
-        dayNumber: 3,
-        position: 4
-      });
+      expect(mockItineraryRepository.update).toHaveBeenCalledWith(
+        "i1",
+        {
+          dayNumber: 3,
+          position: 4
+        },
+        undefined
+      );
       expect(result.dayNumber).toBe(3);
     });
 
@@ -370,14 +376,18 @@ describe("ItineraryService", () => {
         location: null
       });
 
-      expect(mockItineraryRepository.update).toHaveBeenCalledWith("i1", {
-        locationName: null,
-        locationAddress: null,
-        locationLatitude: null,
-        locationLongitude: null,
-        locationPlaceId: null,
-        locationUrl: null
-      });
+      expect(mockItineraryRepository.update).toHaveBeenCalledWith(
+        "i1",
+        {
+          locationName: null,
+          locationAddress: null,
+          locationLatitude: null,
+          locationLongitude: null,
+          locationPlaceId: null,
+          locationUrl: null
+        },
+        undefined
+      );
       expect(result.location).toBeNull();
     });
 
@@ -389,9 +399,13 @@ describe("ItineraryService", () => {
 
       await service.updateItem("u1", "t1", "i1", { startTime: null });
 
-      expect(mockItineraryRepository.update).toHaveBeenCalledWith("i1", {
-        startTime: null
-      });
+      expect(mockItineraryRepository.update).toHaveBeenCalledWith(
+        "i1",
+        {
+          startTime: null
+        },
+        undefined
+      );
     });
 
     it("should throw NotFoundException when item is not in trip", async () => {
@@ -400,6 +414,61 @@ describe("ItineraryService", () => {
       await expect(
         service.updateItem("u1", "t1", "i1", { title: "x" })
       ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe("optimistic locking", () => {
+    it("should pass the expected version to the conditional update", async () => {
+      mockItineraryRepository.findByIdAndTrip.mockResolvedValue(makeItem());
+      mockItineraryRepository.update.mockResolvedValue(
+        makeItem({ title: "x", version: 2 })
+      );
+
+      const result = await service.updateItem(
+        "u1",
+        "t1",
+        "i1",
+        { title: "x" },
+        1
+      );
+
+      expect(mockItineraryRepository.update).toHaveBeenCalledWith(
+        "i1",
+        { title: "x" },
+        1
+      );
+      expect(result.version).toBe(2);
+    });
+
+    it("should reject an outdated version before writing", async () => {
+      mockItineraryRepository.findByIdAndTrip.mockResolvedValue(
+        makeItem({ version: 3 })
+      );
+
+      await expect(
+        service.updateItem("u1", "t1", "i1", { title: "x" }, 2)
+      ).rejects.toBeInstanceOf(PreconditionFailedException);
+      expect(mockItineraryRepository.update).not.toHaveBeenCalled();
+    });
+
+    it("should reject when someone else wrote in between", async () => {
+      mockItineraryRepository.findByIdAndTrip.mockResolvedValue(makeItem());
+      // version matched on read, but the conditional update matched no row
+      mockItineraryRepository.update.mockResolvedValue(null);
+
+      await expect(
+        service.updateItem("u1", "t1", "i1", { title: "x" }, 1)
+      ).rejects.toBeInstanceOf(PreconditionFailedException);
+    });
+
+    it("should not delete an item that changed since it was read", async () => {
+      mockItineraryRepository.findByIdAndTrip.mockResolvedValue(makeItem());
+      mockItineraryRepository.delete.mockResolvedValue(false);
+
+      await expect(
+        service.deleteItem("u1", "t1", "i1", 1)
+      ).rejects.toBeInstanceOf(PreconditionFailedException);
+      expect(mockActivity.publish).not.toHaveBeenCalled();
     });
   });
 
@@ -439,6 +508,10 @@ describe("ItineraryService", () => {
   });
 
   describe("deleteItem", () => {
+    beforeEach(() => {
+      mockItineraryRepository.delete.mockResolvedValue(true);
+    });
+
     it("should delete item of the trip", async () => {
       mockItineraryRepository.findByIdAndTrip.mockResolvedValue(makeItem());
 
@@ -448,7 +521,10 @@ describe("ItineraryService", () => {
         "i1",
         "t1"
       );
-      expect(mockItineraryRepository.delete).toHaveBeenCalledWith("i1");
+      expect(mockItineraryRepository.delete).toHaveBeenCalledWith(
+        "i1",
+        undefined
+      );
     });
 
     it("should throw NotFoundException when item is not in trip", async () => {
