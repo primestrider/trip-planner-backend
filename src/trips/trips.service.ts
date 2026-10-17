@@ -12,12 +12,20 @@ import { roleOf, TripAccessService, TripRole } from "./trip-access.service";
 import { TripListResponse, TripResponse } from "./models";
 import {
   CreateTripDto,
+  DuplicateTripDto,
   ListTripsQuery,
   UpdateTripDto
 } from "./trips.validation";
 import { ItineraryRepository } from "./itinerary/itinerary.repository";
-import { countDaysInclusive, toDate, toDateString } from "src/utils/date";
+import { ChecklistRepository } from "./checklist/checklist.repository";
+import {
+  addDays,
+  countDaysInclusive,
+  toDate,
+  toDateString
+} from "src/utils/date";
 import { toAmount } from "./money";
+import { ActivityPublisher } from "./activity/activity.events";
 
 /**
  * TripsService contains business logic for managing trips
@@ -29,6 +37,8 @@ export class TripsService {
     private readonly tripsRepository: TripsRepository,
     private readonly tripAccess: TripAccessService,
     private readonly itineraryRepository: ItineraryRepository,
+    private readonly checklistRepository: ChecklistRepository,
+    private readonly activity: ActivityPublisher,
     @Inject(WINSTON_MODULE_PROVIDER)
     private readonly logger: Logger
   ) {}
@@ -39,6 +49,7 @@ export class TripsService {
       title: trip.title,
       destination: trip.destination,
       description: trip.description,
+      coverImageUrl: trip.coverImageUrl,
       startDate: toDateString(trip.startDate),
       endDate: toDateString(trip.endDate),
       currency: trip.currency,
@@ -55,6 +66,7 @@ export class TripsService {
       title: payload.title,
       destination: payload.destination,
       description: payload.description ?? null,
+      coverImageUrl: payload.coverImageUrl ?? null,
       startDate: toDate(payload.startDate),
       endDate: toDate(payload.endDate),
       ...(payload.currency !== undefined && { currency: payload.currency }),
@@ -70,10 +82,12 @@ export class TripsService {
     userId: string,
     query: ListTripsQuery
   ): Promise<TripListResponse> {
-    const { page, limit } = query;
+    const { page, limit, q, status, role, order } = query;
+    const today = toDate(query.today ?? toDateString(new Date()));
 
     const { items, total } = await this.tripsRepository.findManyForUser(
       userId,
+      { q, status, role, order, today },
       (page - 1) * limit,
       limit
     );
@@ -141,6 +155,9 @@ export class TripsService {
       ...(payload.description !== undefined && {
         description: payload.description
       }),
+      ...(payload.coverImageUrl !== undefined && {
+        coverImageUrl: payload.coverImageUrl
+      }),
       ...(payload.startDate !== undefined && {
         startDate: toDate(payload.startDate)
       }),
@@ -155,6 +172,13 @@ export class TripsService {
 
     this.logger.info("Trip updated", { userId, tripId });
 
+    this.activity.publish({
+      tripId: trip.id,
+      actorUserId: userId,
+      action: "trip.updated",
+      data: { fields: Object.keys(payload) }
+    });
+
     return this.toResponse(updated, role);
   }
 
@@ -167,5 +191,68 @@ export class TripsService {
     await this.tripsRepository.delete(trip.id);
 
     this.logger.info("Trip deleted", { userId, tripId });
+  }
+
+  /**
+   * Copy a trip the user can see into a new trip owned by the user.
+   *
+   * Copies trip details, budget, itinerary and checklist (unchecked,
+   * unassigned). Bookings (accommodations, transports), expenses,
+   * members and invites belong to the original trip and are not copied.
+   */
+  async duplicate(
+    userId: string,
+    tripId: string,
+    payload: DuplicateTripDto
+  ): Promise<TripResponse> {
+    const { trip } = await this.tripAccess.getTrip(userId, tripId);
+
+    const [items, checklist] = await Promise.all([
+      this.itineraryRepository.findManyByTrip(trip.id),
+      this.checklistRepository.findManyByTrip(trip.id)
+    ]);
+
+    const startDate = payload.startDate
+      ? toDate(payload.startDate)
+      : trip.startDate;
+    const totalDays = countDaysInclusive(trip.startDate, trip.endDate);
+
+    const copy = await this.tripsRepository.createWithContent({
+      userId,
+      title: payload.title ?? `${trip.title} (copy)`.slice(0, 150),
+      destination: trip.destination,
+      description: trip.description,
+      coverImageUrl: trip.coverImageUrl,
+      startDate,
+      endDate: addDays(startDate, totalDays - 1),
+      currency: trip.currency,
+      budgetAmount: trip.budgetAmount,
+      itineraryItems: items.map((item) => ({
+        dayNumber: item.dayNumber,
+        position: item.position,
+        title: item.title,
+        description: item.description,
+        locationName: item.locationName,
+        locationAddress: item.locationAddress,
+        locationLatitude: item.locationLatitude,
+        locationLongitude: item.locationLongitude,
+        locationPlaceId: item.locationPlaceId,
+        locationUrl: item.locationUrl,
+        startTime: item.startTime,
+        endTime: item.endTime
+      })),
+      checklistItems: checklist.map((entry) => ({
+        title: entry.title,
+        category: entry.category
+      }))
+    });
+
+    this.logger.info("Trip duplicated", {
+      userId,
+      sourceTripId: trip.id,
+      tripId: copy.id
+    });
+
+    return this.toResponse(copy, "OWNER");
   }
 }

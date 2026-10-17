@@ -9,7 +9,11 @@ jest.mock("bcrypt", () => ({
 }));
 
 import { Test, TestingModule } from "@nestjs/testing";
-import { ConflictException, UnauthorizedException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  UnauthorizedException
+} from "@nestjs/common";
 import { AuthService } from "./auth.service";
 import { UsersService } from "../users/users.service";
 import { AuthRepository } from "./auth.repository";
@@ -32,12 +36,28 @@ const DEVICE_ID = "test-device-id";
 const mockUsersService = {
   ensureUsernameNotExists: jest.fn(),
   create: jest.fn(),
-  findByUsername: jest.fn()
+  findByUsername: jest.fn(),
+  ensureAccountNotLocked: jest.fn(),
+  increaseFailedLogin: jest.fn(),
+  resetFailedLogin: jest.fn(),
+  updatelastLogin: jest.fn(),
+  findUserById: jest.fn(),
+  changePassword: jest.fn()
+};
+
+// active, unlocked user as stored in the database
+const activeUser = {
+  id: 1,
+  username: "john",
+  password: "hashed-password",
+  isActive: true,
+  lockUntil: null
 };
 
 const mockAuthRepository = {
   create: jest.fn(),
-  deleteTokenByUserAndDevice: jest.fn()
+  deleteTokenByUserAndDevice: jest.fn(),
+  deleteAllTokenUser: jest.fn()
 };
 
 const mockJwtService = {
@@ -177,11 +197,7 @@ describe("AuthService", () => {
 
   describe("login", () => {
     it("should login user successfully and return tokens", async () => {
-      mockUsersService.findByUsername.mockResolvedValue({
-        id: 1,
-        username: "john",
-        password: "hashed-password"
-      });
+      mockUsersService.findByUsername.mockResolvedValue(activeUser);
 
       mockJwtConfigValid();
 
@@ -208,6 +224,20 @@ describe("AuthService", () => {
       expect(
         mockAuthRepository.deleteTokenByUserAndDevice
       ).toHaveBeenCalledWith(1, DEVICE_ID);
+      expect(mockUsersService.resetFailedLogin).toHaveBeenCalledWith(1);
+      expect(mockUsersService.updatelastLogin).toHaveBeenCalledWith(1);
+    });
+
+    it("should throw UnauthorizedException if user is inactive", async () => {
+      mockUsersService.findByUsername.mockResolvedValue({
+        ...activeUser,
+        isActive: false
+      });
+
+      await expect(
+        service.login({ ...makeLoginDto(), deviceId: DEVICE_ID })
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(bcrypt.compare).not.toHaveBeenCalled();
     });
 
     it("should throw UnauthorizedException if user not found", async () => {
@@ -219,25 +249,19 @@ describe("AuthService", () => {
     });
 
     it("should throw UnauthorizedException if password invalid", async () => {
-      mockUsersService.findByUsername.mockResolvedValue({
-        id: 1,
-        username: "john",
-        password: "hashed-password"
-      });
+      mockUsersService.findByUsername.mockResolvedValue(activeUser);
 
       (bcrypt.compare as jest.Mock).mockResolvedValue(false);
 
       await expect(
         service.login({ ...makeLoginDto(), deviceId: DEVICE_ID })
       ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(mockUsersService.increaseFailedLogin).toHaveBeenCalledWith(1);
+      expect(mockAuthRepository.create).not.toHaveBeenCalled();
     });
 
     it("should throw InternalServerErrorException if token save fails", async () => {
-      mockUsersService.findByUsername.mockResolvedValue({
-        id: 1,
-        username: "john",
-        password: "hashed-password"
-      });
+      mockUsersService.findByUsername.mockResolvedValue(activeUser);
 
       mockJwtConfigValid();
 
@@ -252,7 +276,68 @@ describe("AuthService", () => {
 
       await expect(
         service.login({ ...makeLoginDto(), deviceId: DEVICE_ID })
-      ).rejects.toThrow(Error);
+      ).rejects.toThrow("DB error");
+    });
+  });
+
+  // ======================================================
+  // CHANGE PASSWORD
+  // ======================================================
+
+  describe("changePassword", () => {
+    const request = {
+      userId: "u1",
+      deviceId: DEVICE_ID,
+      currentPassword: "old-Passw0rd!",
+      newPassword: "new-Passw0rd!",
+      confirmPassword: "new-Passw0rd!"
+    };
+
+    beforeEach(() => {
+      mockUsersService.findUserById.mockResolvedValue({
+        ...activeUser,
+        id: "u1"
+      });
+      // clearAllMocks keeps implementations set by earlier tests
+      mockAuthRepository.create.mockResolvedValue(undefined);
+      mockJwtConfigValid();
+      mockJwtService.signAsync
+        .mockResolvedValueOnce("new-access")
+        .mockResolvedValueOnce("new-refresh");
+    });
+
+    it("should store the new hash, sign out all sessions and re-issue tokens", async () => {
+      (bcrypt.hash as jest.Mock).mockResolvedValue("new-hash");
+
+      const result = await service.changePassword(request);
+
+      expect(bcrypt.compare).toHaveBeenCalledWith(
+        "old-Passw0rd!",
+        "hashed-password"
+      );
+      expect(mockUsersService.changePassword).toHaveBeenCalledWith(
+        "u1",
+        "new-hash"
+      );
+      expect(mockAuthRepository.deleteAllTokenUser).toHaveBeenCalledWith("u1");
+      // new session for the current device only
+      expect(mockAuthRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: "u1", deviceId: DEVICE_ID })
+      );
+      expect(result).toMatchObject({
+        accessToken: "new-access",
+        refreshToken: "new-refresh"
+      });
+    });
+
+    it("should reject a wrong current password without changes", async () => {
+      (bcrypt.compare as jest.Mock).mockResolvedValue(false);
+
+      await expect(service.changePassword(request)).rejects.toBeInstanceOf(
+        BadRequestException
+      );
+      expect(mockUsersService.changePassword).not.toHaveBeenCalled();
+      expect(mockAuthRepository.deleteAllTokenUser).not.toHaveBeenCalled();
     });
   });
 });

@@ -30,10 +30,14 @@ model User {
   avatarId Int?
   avatar   Avatar? @relation(fields: [avatarId], references: [id])
 
-  accessTokens    UserAccessToken[]
-  trips           Trip[]
-  tripMemberships TripMember[]
-  paidExpenses    TripExpense[]
+  accessTokens           UserAccessToken[]
+  trips                  Trip[]
+  tripMemberships        TripMember[]
+  paidExpenses           TripExpense[]
+  expenseShares          TripExpenseShare[]
+  assignedChecklistItems TripChecklistItem[] @relation("ChecklistAssignee")
+  checkedChecklistItems  TripChecklistItem[] @relation("ChecklistCheckedBy")
+  activities             TripActivity[]      @relation("ActivityActor")
 
   createdAt DateTime  @default(now()) @db.Timestamp(0)
   updatedAt DateTime  @updatedAt @db.Timestamp(0)
@@ -86,6 +90,12 @@ model Trip {
   destination String  @db.VarChar(150)
   description String? @db.Text
 
+  // https image shown as the trip cover
+  coverImageUrl String? @db.VarChar(2048)
+
+  // token of the public read-only link; null when sharing is off
+  shareToken String? @unique @db.VarChar(64)
+
   startDate DateTime @db.Date
   endDate   DateTime @db.Date
 
@@ -99,6 +109,8 @@ model Trip {
   transports     TripTransport[]
   expenses       TripExpense[]
   invites        TripInvite[]
+  checklistItems TripChecklistItem[]
+  activities     TripActivity[]
 
   createdAt DateTime @default(now()) @db.Timestamp(0)
   updatedAt DateTime @updatedAt @db.Timestamp(0)
@@ -179,6 +191,12 @@ model ItineraryItem {
   // HH:mm (24h)
   startTime String? @db.VarChar(5)
   endTime   String? @db.VarChar(5)
+
+  // manual order within the day, used for untimed items and equal start times
+  position Int @default(0)
+
+  // optimistic locking: bumped on every content change
+  version Int @default(1)
 
   createdAt DateTime @default(now()) @db.Timestamp(0)
   updatedAt DateTime @updatedAt @db.Timestamp(0)
@@ -292,10 +310,79 @@ model TripExpense {
 
   notes String? @db.Text
 
+  shares TripExpenseShare[]
+
   createdAt DateTime @default(now()) @db.Timestamp(0)
   updatedAt DateTime @updatedAt @db.Timestamp(0)
 
   @@index([tripId, spentDate])
   @@index([paidByUserId])
   @@map("trip_expenses")
+}
+
+// Part of an expense owed by one trip participant (equal split)
+model TripExpenseShare {
+  expenseId String
+  expense   TripExpense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  amount Decimal @db.Decimal(14, 2)
+
+  @@id([expenseId, userId])
+  @@index([userId])
+  @@map("trip_expense_shares")
+}
+
+// Packing list / to-do item of a trip
+model TripChecklistItem {
+  id String @id @default(uuid())
+
+  tripId String
+  trip   Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  title    String  @db.VarChar(200)
+  // free-form group, e.g. "Documents", "Clothes"
+  category String? @db.VarChar(50)
+
+  // trip member responsible for the item
+  assignedToUserId String?
+  assignedTo       User?   @relation("ChecklistAssignee", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+
+  isChecked       Boolean   @default(false)
+  checkedAt       DateTime? @db.Timestamp(0)
+  checkedByUserId String?
+  checkedBy       User?     @relation("ChecklistCheckedBy", fields: [checkedByUserId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @db.Timestamp(0)
+  updatedAt DateTime @updatedAt @db.Timestamp(0)
+
+  @@index([tripId, isChecked])
+  @@index([assignedToUserId])
+  @@index([checkedByUserId])
+  @@map("trip_checklist_items")
+}
+
+// Activity feed entry of a trip (written by the activity event listener)
+model TripActivity {
+  id String @id @default(uuid())
+
+  tripId String
+  trip   Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  // who did it; kept as null if that user is deleted
+  actorUserId String?
+  actor       User?   @relation("ActivityActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  // e.g. "expense.added", "member.joined_via_invite"
+  action String @db.VarChar(50)
+  data   Json?
+
+  // millisecond precision keeps the feed order stable
+  createdAt DateTime @default(now()) @db.Timestamp(3)
+
+  @@index([tripId, createdAt, id])
+  @@index([actorUserId])
+  @@map("trip_activities")
 }

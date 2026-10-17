@@ -10,6 +10,9 @@ import { MembersService } from "./members.service";
 import { MembersRepository } from "./members.repository";
 import { TripAccessService } from "../trip-access.service";
 import { UsersService } from "src/users/users.service";
+import { ActivityPublisher } from "../activity/activity.events";
+
+const mockActivity = { publish: jest.fn() };
 
 const mockTripAccess = { getTrip: jest.fn() };
 
@@ -19,7 +22,8 @@ const mockMembersRepository = {
   findByTripAndUser: jest.fn(),
   create: jest.fn(),
   updateRole: jest.fn(),
-  delete: jest.fn()
+  delete: jest.fn(),
+  transferOwnership: jest.fn()
 };
 
 const mockUsersService = { findByUsername: jest.fn() };
@@ -58,6 +62,7 @@ describe("MembersService", () => {
         { provide: TripAccessService, useValue: mockTripAccess },
         { provide: MembersRepository, useValue: mockMembersRepository },
         { provide: UsersService, useValue: mockUsersService },
+        { provide: ActivityPublisher, useValue: mockActivity },
         { provide: WINSTON_MODULE_PROVIDER, useValue: mockLogger }
       ]
     }).compile();
@@ -193,6 +198,9 @@ describe("MembersService", () => {
       await service.remove("owner", "t1", "u2");
 
       expect(mockMembersRepository.delete).toHaveBeenCalledWith("m-u2");
+      expect(mockActivity.publish).toHaveBeenCalledWith(
+        expect.objectContaining({ action: "member.removed" })
+      );
     });
 
     it("should let a member leave the trip", async () => {
@@ -204,6 +212,12 @@ describe("MembersService", () => {
       await service.remove("u2", "t1", "u2");
 
       expect(mockMembersRepository.delete).toHaveBeenCalledWith("m-u2");
+      expect(mockActivity.publish).toHaveBeenCalledWith({
+        tripId: "t1",
+        actorUserId: "u2",
+        action: "member.left",
+        data: { userId: "u2" }
+      });
     });
 
     it("should forbid a member removing someone else", async () => {
@@ -229,5 +243,64 @@ describe("MembersService", () => {
         expect(mockMembersRepository.delete).not.toHaveBeenCalled();
       }
     );
+  });
+
+  describe("transferOwnership", () => {
+    beforeEach(() => {
+      mockMembersRepository.findOwner.mockResolvedValue(user("u2", "jane"));
+      mockMembersRepository.findManyByTrip.mockResolvedValue([
+        membership("owner", "EDITOR")
+      ]);
+    });
+
+    it("should hand the trip to a member (owner only)", async () => {
+      mockMembersRepository.findByTripAndUser.mockResolvedValue(
+        membership("u2", "VIEWER")
+      );
+      mockMembersRepository.transferOwnership.mockResolvedValue(true);
+
+      const result = await service.transferOwnership("owner", "t1", "u2");
+
+      expect(mockTripAccess.getTrip).toHaveBeenCalledWith(
+        "owner",
+        "t1",
+        "OWNER"
+      );
+      expect(mockMembersRepository.transferOwnership).toHaveBeenCalledWith(
+        "t1",
+        "owner",
+        "u2"
+      );
+      expect(result.map((m) => [m.userId, m.role])).toEqual([
+        ["u2", "OWNER"],
+        ["owner", "EDITOR"]
+      ]);
+    });
+
+    it("should reject a user who is not a member", async () => {
+      mockMembersRepository.findByTripAndUser.mockResolvedValue(null);
+
+      await expect(
+        service.transferOwnership("owner", "t1", "u9")
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(mockMembersRepository.transferOwnership).not.toHaveBeenCalled();
+    });
+
+    it("should reject transferring to the current owner", async () => {
+      await expect(
+        service.transferOwnership("owner", "t1", "owner")
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it("should report a concurrent ownership change", async () => {
+      mockMembersRepository.findByTripAndUser.mockResolvedValue(
+        membership("u2", "EDITOR")
+      );
+      mockMembersRepository.transferOwnership.mockResolvedValue(false);
+
+      await expect(
+        service.transferOwnership("owner", "t1", "u2")
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
   });
 });

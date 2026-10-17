@@ -1,5 +1,4 @@
 import {
-  Body,
   Controller,
   Delete,
   Get,
@@ -9,13 +8,13 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
-  Query,
   UseGuards
 } from "@nestjs/common";
+import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import { ZodBody, ZodQuery } from "src/common/validation/zod.decorators";
 import { ExpensesService } from "./expenses.service";
 import { AccessTokenGuard } from "src/auth/guards/access-token.guard";
 import { CurrentUser } from "src/common/decorator/current-user.decorator";
-import { ValidationPipe } from "src/common/validation/validation.pipe";
 import {
   type CreateExpenseDto,
   type ListExpensesQuery,
@@ -27,10 +26,13 @@ import {
 import {
   type BudgetSummaryResponse,
   type ExpenseListResponse,
-  type ExpenseResponse
+  type ExpenseResponse,
+  type SettlementResponse
 } from "./models";
 
+@ApiTags("expenses")
 @Controller("trips/:tripId")
+@ApiBearerAuth()
 @UseGuards(AccessTokenGuard)
 export class ExpensesController {
   constructor(private readonly expensesService: ExpensesService) {}
@@ -48,6 +50,18 @@ export class ExpensesController {
   }
 
   /**
+   * Who owes whom, with the fewest transfers to settle up
+   *  GET /trips/:tripId/settlement
+   */
+  @Get("settlement")
+  async getSettlement(
+    @CurrentUser("sub") userId: string,
+    @Param("tripId", ParseUUIDPipe) tripId: string
+  ): Promise<SettlementResponse> {
+    return this.expensesService.getSettlement(userId, tripId);
+  }
+
+  /**
    * List expenses of a trip
    *  GET /trips/:tripId/expenses?category=FOOD&page=1&limit=50
    */
@@ -55,7 +69,7 @@ export class ExpensesController {
   async list(
     @CurrentUser("sub") userId: string,
     @Param("tripId", ParseUUIDPipe) tripId: string,
-    @Query(ValidationPipe(ListExpensesQuerySchema)) query: ListExpensesQuery
+    @ZodQuery(ListExpensesQuerySchema) query: ListExpensesQuery
   ): Promise<ExpenseListResponse> {
     return this.expensesService.list(userId, tripId, query);
   }
@@ -69,7 +83,7 @@ export class ExpensesController {
   async create(
     @CurrentUser("sub") userId: string,
     @Param("tripId", ParseUUIDPipe) tripId: string,
-    @Body(ValidationPipe(CreateExpenseSchema)) body: CreateExpenseDto
+    @ZodBody(CreateExpenseSchema) body: CreateExpenseDto
   ): Promise<ExpenseResponse> {
     return this.expensesService.create(userId, tripId, body);
   }
@@ -83,7 +97,7 @@ export class ExpensesController {
     @CurrentUser("sub") userId: string,
     @Param("tripId", ParseUUIDPipe) tripId: string,
     @Param("expenseId", ParseUUIDPipe) expenseId: string,
-    @Body(ValidationPipe(UpdateExpenseSchema)) body: UpdateExpenseDto
+    @ZodBody(UpdateExpenseSchema) body: UpdateExpenseDto
   ): Promise<ExpenseResponse> {
     return this.expensesService.update(userId, tripId, expenseId, body);
   }

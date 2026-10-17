@@ -24,6 +24,17 @@ const ExpenseFields = z.object({
   // trip member who paid; defaults to the user recording the expense
   paidByUserId: z.uuid().nullable().optional(),
 
+  // trip members sharing the cost equally; defaults to everyone on the trip
+  splitAmong: z
+    .array(z.uuid())
+    .min(1)
+    .max(100)
+    .refine(
+      (ids) => new Set(ids).size === ids.length,
+      "Members must not be repeated"
+    )
+    .optional(),
+
   notes: z.string().trim().max(5000).nullable().optional()
 });
 

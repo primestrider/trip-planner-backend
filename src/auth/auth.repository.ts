@@ -101,4 +101,17 @@ export class AuthRepository {
       }
     });
   }
+
+  /**
+   * Delete refresh tokens that expired before `now`.
+   *
+   * @returns number of deleted tokens
+   */
+  async deleteExpired(now: Date): Promise<number> {
+    const { count } = await this.prisma.userAccessToken.deleteMany({
+      where: { expiresAt: { lt: now } }
+    });
+
+    return count;
+  }
 }

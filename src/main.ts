@@ -2,17 +2,15 @@ import { NestFactory } from "@nestjs/core";
 import { AppModule } from "./app.module";
 import { WINSTON_MODULE_NEST_PROVIDER } from "nest-winston";
 import { LoggerService } from "@nestjs/common";
-import { DeviceIdInterceptor } from "./common/interceptor/device.interceptor";
-import { ResponseInterceptor } from "./common/interceptor/response.interceptor";
+import { ConfigService } from "@nestjs/config";
+import { configureApp } from "./app.setup";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  const logger = app.get<LoggerService>(WINSTON_MODULE_NEST_PROVIDER);
-  app.useLogger(logger);
-  app.useGlobalInterceptors(new DeviceIdInterceptor());
+  app.useLogger(app.get<LoggerService>(WINSTON_MODULE_NEST_PROVIDER));
+  configureApp(app);
 
-  app.useGlobalInterceptors(new ResponseInterceptor());
-  await app.listen(process.env.PORT ?? 3000);
+  await app.listen(app.get(ConfigService).get<number>("PORT") ?? 3000);
 }
-bootstrap();
+void bootstrap();

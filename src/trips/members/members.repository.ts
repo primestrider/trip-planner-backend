@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { Prisma, TripMember, TripMemberRole } from "@prisma/client";
+import { Prisma, Trip, TripMember, TripMemberRole } from "@prisma/client";
 import { PrismaService } from "src/common/prisma.service";
 
 /**
@@ -46,6 +46,21 @@ export class MembersRepository {
     });
   }
 
+  /**
+   * Owner and member ids of a trip: everyone who can pay, share costs,
+   * or be assigned tasks on it.
+   */
+  async findParticipantIds(
+    trip: Pick<Trip, "id" | "userId">
+  ): Promise<string[]> {
+    const members = await this.prisma.tripMember.findMany({
+      where: { tripId: trip.id },
+      select: { userId: true }
+    });
+
+    return [trip.userId, ...members.map((member) => member.userId)];
+  }
+
   async findByTripAndUser(
     tripId: string,
     userId: string
@@ -80,6 +95,40 @@ export class MembersRepository {
   async delete(memberId: string): Promise<void> {
     await this.prisma.tripMember.delete({
       where: { id: memberId }
+    });
+  }
+
+  /**
+   * Make a member the owner of the trip, atomically:
+   * the new owner leaves the member list and the previous owner
+   * becomes an EDITOR.
+   *
+   * @returns `false` if the trip owner changed in the meantime
+   */
+  async transferOwnership(
+    tripId: string,
+    currentOwnerId: string,
+    newOwnerId: string
+  ): Promise<boolean> {
+    return this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.trip.updateMany({
+        where: { id: tripId, userId: currentOwnerId },
+        data: { userId: newOwnerId }
+      });
+
+      if (count === 0) {
+        return false;
+      }
+
+      await tx.tripMember.delete({
+        where: { tripId_userId: { tripId, userId: newOwnerId } }
+      });
+
+      await tx.tripMember.create({
+        data: { tripId, userId: currentOwnerId, role: "EDITOR" }
+      });
+
+      return true;
     });
   }
 }

@@ -9,6 +9,7 @@ export type TripResponse = {
   title: string;
   destination: string;
   description: string | null;
+  coverImageUrl: string | null;
   startDate: string;
   endDate: string;
   currency: string;

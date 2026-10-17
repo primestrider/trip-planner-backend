@@ -132,4 +132,29 @@ export class UsersRepository {
       select: { id: true, url: true }
     });
   }
+
+  /**
+   * Number of trips owned by the user that still have other members
+   */
+  async countOwnedTripsWithMembers(userId: string): Promise<number> {
+    return this.prisma.trip.count({
+      where: { userId, members: { some: {} } }
+    });
+  }
+
+  /**
+   * Soft delete a user in one transaction: mark the account deleted and
+   * inactive, sign out every device, and leave trips shared with them.
+   * Owned trips stay in the database with the user.
+   */
+  async softDelete(userId: string): Promise<void> {
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: userId },
+        data: { deletedAt: new Date(), isActive: false }
+      }),
+      this.prisma.userAccessToken.deleteMany({ where: { userId } }),
+      this.prisma.tripMember.deleteMany({ where: { userId } })
+    ]);
+  }
 }

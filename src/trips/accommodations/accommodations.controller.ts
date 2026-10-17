@@ -1,5 +1,4 @@
 import {
-  Body,
   Controller,
   Delete,
   Get,
@@ -11,10 +10,11 @@ import {
   Post,
   UseGuards
 } from "@nestjs/common";
+import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import { ZodBody } from "src/common/validation/zod.decorators";
 import { AccommodationsService } from "./accommodations.service";
 import { AccessTokenGuard } from "src/auth/guards/access-token.guard";
 import { CurrentUser } from "src/common/decorator/current-user.decorator";
-import { ValidationPipe } from "src/common/validation/validation.pipe";
 import {
   type CreateAccommodationDto,
   type UpdateAccommodationDto,
@@ -23,7 +23,9 @@ import {
 } from "./accommodations.validation";
 import { type AccommodationResponse } from "./models";
 
+@ApiTags("accommodations")
 @Controller("trips/:tripId/accommodations")
+@ApiBearerAuth()
 @UseGuards(AccessTokenGuard)
 export class AccommodationsController {
   constructor(private readonly accommodationsService: AccommodationsService) {}
@@ -62,7 +64,7 @@ export class AccommodationsController {
   async create(
     @CurrentUser("sub") userId: string,
     @Param("tripId", ParseUUIDPipe) tripId: string,
-    @Body(ValidationPipe(CreateAccommodationSchema))
+    @ZodBody(CreateAccommodationSchema)
     body: CreateAccommodationDto
   ): Promise<AccommodationResponse> {
     return this.accommodationsService.create(userId, tripId, body);
@@ -77,7 +79,7 @@ export class AccommodationsController {
     @CurrentUser("sub") userId: string,
     @Param("tripId", ParseUUIDPipe) tripId: string,
     @Param("id", ParseUUIDPipe) accommodationId: string,
-    @Body(ValidationPipe(UpdateAccommodationSchema))
+    @ZodBody(UpdateAccommodationSchema)
     body: UpdateAccommodationDto
   ): Promise<AccommodationResponse> {
     return this.accommodationsService.update(

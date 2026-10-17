@@ -1,5 +1,5 @@
 import { Logger } from "winston";
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, OnModuleDestroy } from "@nestjs/common";
 import { WINSTON_MODULE_PROVIDER } from "nest-winston";
 import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 import { ConfigService } from "@nestjs/config";
@@ -17,7 +17,7 @@ import { PrismaClient } from "@prisma/client";
  * database access is required.
  */
 @Injectable()
-export class PrismaService extends PrismaClient {
+export class PrismaService extends PrismaClient implements OnModuleDestroy {
   /**
    * Creates a new PrismaService instance.
    *
@@ -34,12 +34,14 @@ export class PrismaService extends PrismaClient {
     @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger
   ) {
     const host = configService.get<string>("DATABASE_HOST");
+    const port = configService.get<number>("DATABASE_PORT");
     const user = configService.get<string>("DATABASE_USER");
     const password = configService.get<string>("DATABASE_PASSWORD");
     const database = configService.get<string>("DATABASE_NAME");
 
     const adapter = new PrismaMariaDb({
       host: host!,
+      port,
       user: user!,
       password: password!,
       database: database!,
@@ -70,4 +72,12 @@ export class PrismaService extends PrismaClient {
   //   this.$on("error", (e) => this.logger.error(e));
   //   this.$on("query", (e) => this.logger.info(e));
   // }
+
+  /**
+   * Close database connections when the app shuts down
+   * (enabled by app.enableShutdownHooks()).
+   */
+  async onModuleDestroy(): Promise<void> {
+    await this.$disconnect();
+  }
 }

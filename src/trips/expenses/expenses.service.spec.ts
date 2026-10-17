@@ -11,6 +11,9 @@ import { ExpensesRepository } from "./expenses.repository";
 import { MembersRepository } from "../members/members.repository";
 import { TripAccessService } from "../trip-access.service";
 import { CreateExpenseSchema } from "./expenses.validation";
+import { ActivityPublisher } from "../activity/activity.events";
+
+const mockActivity = { publish: jest.fn() };
 
 const mockTripAccess = { getTrip: jest.fn() };
 
@@ -20,11 +23,16 @@ const mockExpensesRepository = {
   findManyByTrip: jest.fn(),
   summarize: jest.fn(),
   findUsers: jest.fn(),
+  findForSettlement: jest.fn(),
   update: jest.fn(),
   delete: jest.fn()
 };
 
-const mockMembersRepository = { findByTripAndUser: jest.fn() };
+const mockMembersRepository = { findParticipantIds: jest.fn() };
+
+// trip members besides the owner
+const MEMBER = "f7b3c1a2-0000-4000-8000-000000000001";
+const OUTSIDER = "f7b3c1a2-0000-4000-8000-000000000009";
 
 const mockLogger = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
 
@@ -46,6 +54,14 @@ const expense = {
   spentDate: new Date("2026-11-30T00:00:00.000Z"),
   paidByUserId: "owner",
   paidBy: { id: "owner", username: "john", name: null },
+  shares: [
+    {
+      expenseId: "e1",
+      userId: "owner",
+      amount: D("150000.50"),
+      user: { id: "owner", username: "john", name: null }
+    }
+  ],
   notes: null,
   createdAt: new Date("2026-10-01T00:00:00.000Z"),
   updatedAt: new Date("2026-10-01T00:00:00.000Z")
@@ -63,12 +79,17 @@ describe("ExpensesService", () => {
         { provide: TripAccessService, useValue: mockTripAccess },
         { provide: ExpensesRepository, useValue: mockExpensesRepository },
         { provide: MembersRepository, useValue: mockMembersRepository },
+        { provide: ActivityPublisher, useValue: mockActivity },
         { provide: WINSTON_MODULE_PROVIDER, useValue: mockLogger }
       ]
     }).compile();
 
     service = module.get<ExpensesService>(ExpensesService);
     mockTripAccess.getTrip.mockResolvedValue({ trip, role: "OWNER" });
+    mockMembersRepository.findParticipantIds.mockResolvedValue([
+      "owner",
+      MEMBER
+    ]);
   });
 
   describe("create", () => {
@@ -87,45 +108,67 @@ describe("ExpensesService", () => {
         "t1",
         "EDITOR"
       );
+      // split equally between owner and member by default
       expect(mockExpensesRepository.create).toHaveBeenCalledWith(
-        expect.objectContaining({ paidByUserId: "owner", amount: 150000.5 })
+        expect.objectContaining({ paidByUserId: "owner", amount: 150000.5 }),
+        [
+          { userId: MEMBER, amount: 75000.25 },
+          { userId: "owner", amount: 75000.25 }
+        ]
       );
       expect(result).toMatchObject({
         amount: 150000.5,
         spentDate: "2026-11-30",
-        paidBy: { userId: "owner", username: "john" }
+        paidBy: { userId: "owner", username: "john" },
+        splits: [{ user: { userId: "owner" }, amount: 150000.5 }]
+      });
+      expect(mockActivity.publish).toHaveBeenCalledWith({
+        tripId: "t1",
+        actorUserId: "owner",
+        action: "expense.added",
+        data: {
+          expenseId: "e1",
+          title: "Dinner",
+          amount: 150000.5,
+          category: "FOOD"
+        }
       });
     });
 
-    it("should accept a member as payer", async () => {
-      mockMembersRepository.findByTripAndUser.mockResolvedValue({ id: "m1" });
+    it("should split among chosen members with leftover cents", async () => {
       mockExpensesRepository.create.mockResolvedValue(expense);
 
       await service.create("owner", "t1", {
         category: "FOOD",
-        title: "Dinner",
-        amount: 10,
-        paidByUserId: "f7b3c1a2-0000-4000-8000-000000000001"
+        title: "Snacks",
+        amount: 0.05,
+        paidByUserId: MEMBER,
+        splitAmong: [MEMBER, "owner"]
       });
 
-      expect(mockMembersRepository.findByTripAndUser).toHaveBeenCalledWith(
-        "t1",
-        "f7b3c1a2-0000-4000-8000-000000000001"
-      );
+      const [[, shares]] = mockExpensesRepository.create.mock.calls as [
+        [unknown, { userId: string; amount: number }[]]
+      ];
+      expect(shares).toEqual([
+        { userId: MEMBER, amount: 0.03 },
+        { userId: "owner", amount: 0.02 }
+      ]);
     });
 
-    it("should reject payer outside the trip", async () => {
-      mockMembersRepository.findByTripAndUser.mockResolvedValue(null);
-
+    it.each([
+      ["payer", { paidByUserId: OUTSIDER }],
+      ["split member", { splitAmong: ["owner", OUTSIDER] }]
+    ])("should reject %s outside the trip", async (_, extra) => {
       await expect(
         service.create("owner", "t1", {
           category: "FOOD",
           title: "Dinner",
           amount: 10,
-          paidByUserId: "f7b3c1a2-0000-4000-8000-000000000009"
+          ...extra
         })
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(mockExpensesRepository.create).not.toHaveBeenCalled();
+      expect(mockActivity.publish).not.toHaveBeenCalled();
     });
 
     it("should not record expense when user is only a viewer", async () => {
@@ -138,6 +181,90 @@ describe("ExpensesService", () => {
           amount: 1
         })
       ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+  });
+
+  describe("update", () => {
+    it("should re-split among the same members when amount changes", async () => {
+      mockExpensesRepository.findByIdAndTrip.mockResolvedValue(expense);
+      mockExpensesRepository.update.mockResolvedValue(expense);
+
+      await service.update("owner", "t1", "e1", { amount: 99 });
+
+      expect(mockExpensesRepository.update).toHaveBeenCalledWith(
+        "e1",
+        { amount: 99 },
+        [{ userId: "owner", amount: 99 }]
+      );
+      expect(mockMembersRepository.findParticipantIds).not.toHaveBeenCalled();
+    });
+
+    it("should keep the split when only the title changes", async () => {
+      mockExpensesRepository.findByIdAndTrip.mockResolvedValue(expense);
+      mockExpensesRepository.update.mockResolvedValue(expense);
+
+      await service.update("owner", "t1", "e1", { title: "Lunch" });
+
+      expect(mockExpensesRepository.update).toHaveBeenCalledWith(
+        "e1",
+        { title: "Lunch" },
+        undefined
+      );
+    });
+  });
+
+  describe("getSettlement", () => {
+    it("should compute balances and transfers", async () => {
+      // owner paid 90 split owner/member; member paid 10 for member only;
+      // a legacy expense of 20 paid by member without shares (split by all)
+      mockExpensesRepository.findForSettlement.mockResolvedValue([
+        {
+          amount: D("90"),
+          paidByUserId: "owner",
+          shares: [
+            { userId: "owner", amount: D("45") },
+            { userId: MEMBER, amount: D("45") }
+          ]
+        },
+        {
+          amount: D("10"),
+          paidByUserId: MEMBER,
+          shares: [{ userId: MEMBER, amount: D("10") }]
+        },
+        { amount: D("20"), paidByUserId: MEMBER, shares: [] },
+        { amount: D("5"), paidByUserId: null, shares: [] }
+      ]);
+      mockExpensesRepository.findUsers.mockResolvedValue([
+        { id: "owner", username: "john", name: null },
+        { id: MEMBER, username: "jane", name: null }
+      ]);
+
+      const result = await service.getSettlement("owner", "t1");
+
+      // owner: paid 90, share 45 + 10 = 55 -> +35
+      // member: paid 30, share 45 + 10 + 10 = 65 -> -35
+      expect(result.balances).toEqual([
+        {
+          user: { userId: "owner", username: "john", name: null },
+          paid: 90,
+          share: 55,
+          net: 35
+        },
+        {
+          user: { userId: MEMBER, username: "jane", name: null },
+          paid: 30,
+          share: 65,
+          net: -35
+        }
+      ]);
+      expect(result.transfers).toEqual([
+        {
+          from: { userId: MEMBER, username: "jane", name: null },
+          to: { userId: "owner", username: "john", name: null },
+          amount: 35
+        }
+      ]);
+      expect(result.unassignedTotal).toBe(5);
     });
   });
 

@@ -50,19 +50,29 @@ describe("UpdateTripSchema", () => {
 
 describe("ListTripsQuerySchema", () => {
   it("should apply defaults and coerce strings", () => {
-    expect(ListTripsQuerySchema.parse({})).toEqual({ page: 1, limit: 20 });
+    expect(ListTripsQuerySchema.parse({})).toEqual({
+      page: 1,
+      limit: 20,
+      order: "desc"
+    });
     expect(ListTripsQuerySchema.parse({ page: "2", limit: "5" })).toEqual({
       page: 2,
-      limit: 5
+      limit: 5,
+      order: "desc"
     });
   });
 
-  it.each([{ page: "0" }, { limit: "101" }, { page: "abc" }])(
-    "should reject %j",
-    (input) => {
-      expect(ListTripsQuerySchema.safeParse(input).success).toBe(false);
-    }
-  );
+  it.each([
+    { page: "0" },
+    { limit: "101" },
+    { page: "abc" },
+    { status: "soon" },
+    { role: "admin" },
+    { order: "up" },
+    { today: "30-11-2026" }
+  ])("should reject %j", (input) => {
+    expect(ListTripsQuerySchema.safeParse(input).success).toBe(false);
+  });
 });
 
 describe("CreateTripSchema budget", () => {
@@ -83,5 +93,29 @@ describe("CreateTripSchema budget", () => {
     { ...validTrip, budgetAmount: 10.001 }
   ])("should reject %j", (input) => {
     expect(CreateTripSchema.safeParse(input).success).toBe(false);
+  });
+});
+
+describe("CreateTripSchema cover image", () => {
+  it("should accept an https image URL or null", () => {
+    for (const coverImageUrl of [
+      "https://images.unsplash.com/photo-1537996194471-e657df975ab4?w=1200",
+      null
+    ]) {
+      expect(
+        CreateTripSchema.safeParse({ ...validTrip, coverImageUrl }).success
+      ).toBe(true);
+    }
+  });
+
+  it.each([
+    "http://example.com/a.jpg",
+    "javascript:alert(1)",
+    "data:image/png;base64,AAAA",
+    "not a url"
+  ])("should reject %s", (coverImageUrl) => {
+    expect(
+      CreateTripSchema.safeParse({ ...validTrip, coverImageUrl }).success
+    ).toBe(false);
   });
 });

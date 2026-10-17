@@ -6,7 +6,8 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['eslint.config.mjs'],
+    // plain JS helpers outside the TypeScript project
+    ignores: ['eslint.config.mjs', 'test/setup/*.cjs'],
   },
 
   // 1️⃣ Base rules
@@ -33,6 +34,18 @@ export default tseslint.config(
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-floating-promises': 'warn',
       '@typescript-eslint/no-unsafe-argument': 'warn',
+    },
+  },
+
+  // e2e tests read untyped JSON response bodies (supertest res.body: any)
+  // and assert on their shape, so unsafe-any rules only add noise there
+  {
+    files: ['test/**/*.e2e-spec.ts'],
+    rules: {
+      '@typescript-eslint/no-unsafe-member-access': 'off',
+      '@typescript-eslint/no-unsafe-assignment': 'off',
+      '@typescript-eslint/no-unsafe-call': 'off',
+      '@typescript-eslint/no-unsafe-argument': 'off',
     },
   },
 

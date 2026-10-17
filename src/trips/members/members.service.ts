@@ -18,6 +18,7 @@ import {
 } from "./members.repository";
 import { TripMemberResponse } from "./models";
 import { AddMemberDto, UpdateMemberDto } from "./members.validation";
+import { ActivityPublisher } from "../activity/activity.events";
 
 function isUniqueViolation(error: unknown): boolean {
   return (
@@ -41,6 +42,7 @@ export class MembersService {
     private readonly tripAccess: TripAccessService,
     private readonly membersRepository: MembersRepository,
     private readonly usersService: UsersService,
+    private readonly activity: ActivityPublisher,
     @Inject(WINSTON_MODULE_PROVIDER)
     private readonly logger: Logger
   ) {}
@@ -140,6 +142,13 @@ export class MembersService {
         role: payload.role
       });
 
+      this.activity.publish({
+        tripId: trip.id,
+        actorUserId: userId,
+        action: "member.added",
+        data: { userId: user.id, username: user.username, role: payload.role }
+      });
+
       return this.toResponse(member);
     } catch (error: unknown) {
       if (isUniqueViolation(error)) {
@@ -174,6 +183,13 @@ export class MembersService {
       role: payload.role
     });
 
+    this.activity.publish({
+      tripId: trip.id,
+      actorUserId: userId,
+      action: "member.role_changed",
+      data: { userId: memberUserId, role: payload.role }
+    });
+
     return this.toResponse(updated);
   }
 
@@ -206,5 +222,59 @@ export class MembersService {
     await this.membersRepository.delete(member.id);
 
     this.logger.info("Trip member removed", { userId, tripId, memberUserId });
+
+    this.activity.publish({
+      tripId: trip.id,
+      actorUserId: userId,
+      action: memberUserId === userId ? "member.left" : "member.removed",
+      data: { userId: memberUserId }
+    });
+  }
+
+  /**
+   * Hand the trip over to another member. Owner only.
+   * The previous owner stays on the trip as EDITOR.
+   *
+   * @throws NotFoundException if the user is not a member of the trip
+   * @throws ConflictException if ownership changed concurrently
+   * @returns members after the transfer
+   */
+  async transferOwnership(
+    userId: string,
+    tripId: string,
+    newOwnerId: string
+  ): Promise<TripMemberResponse[]> {
+    const { trip } = await this.tripAccess.getTrip(userId, tripId, "OWNER");
+
+    if (newOwnerId === trip.userId) {
+      throw new BadRequestException("User is already the owner of this trip");
+    }
+
+    await this.findMember(trip.id, newOwnerId);
+
+    const transferred = await this.membersRepository.transferOwnership(
+      trip.id,
+      trip.userId,
+      newOwnerId
+    );
+
+    if (!transferred) {
+      throw new ConflictException("Trip ownership has already changed");
+    }
+
+    this.logger.info("Trip ownership transferred", {
+      userId,
+      tripId,
+      newOwnerId
+    });
+
+    this.activity.publish({
+      tripId: trip.id,
+      actorUserId: userId,
+      action: "ownership.transferred",
+      data: { fromUserId: trip.userId, toUserId: newOwnerId }
+    });
+
+    return this.list(newOwnerId, trip.id);
   }
 }

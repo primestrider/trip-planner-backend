@@ -1,4 +1,6 @@
 import { LocationResponse } from "../../location";
+import { AccommodationResponse } from "../../accommodations/models";
+import { TransportResponse } from "../../transports/models";
 
 export type ItineraryItemResponse = {
   id: string;
@@ -8,6 +10,8 @@ export type ItineraryItemResponse = {
   location: LocationResponse | null;
   startTime: string | null;
   endTime: string | null;
+  // send back as If-Match when updating or deleting to avoid lost updates
+  version: number;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -20,7 +24,16 @@ export type ItineraryDayResponse = {
   dayNumber: number;
   date: string;
   items: ItineraryItemResponse[];
+  // where travelers stay on this date
+  accommodations: {
+    event: AccommodationEvent;
+    accommodation: AccommodationResponse;
+  }[];
+  // transports departing or arriving on this date (local time)
+  transports: TransportResponse[];
 };
+
+export type AccommodationEvent = "CHECK_OUT" | "STAY" | "CHECK_IN";
 
 export type ItineraryResponse = {
   tripId: string;

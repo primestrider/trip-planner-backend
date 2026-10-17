@@ -2,12 +2,22 @@ import { Test, TestingModule } from "@nestjs/testing";
 import {
   BadRequestException,
   ForbiddenException,
-  NotFoundException
+  NotFoundException,
+  PreconditionFailedException
 } from "@nestjs/common";
 import { WINSTON_MODULE_PROVIDER } from "nest-winston";
 import { ItineraryService } from "./itinerary.service";
 import { ItineraryRepository } from "./itinerary.repository";
 import { TripAccessService } from "../trip-access.service";
+import { AccommodationsRepository } from "../accommodations/accommodations.repository";
+import { TransportsRepository } from "../transports/transports.repository";
+import { toLocationColumns } from "../location";
+import { ActivityPublisher } from "../activity/activity.events";
+
+const mockActivity = { publish: jest.fn() };
+
+const mockAccommodationsRepository = { findManyByTrip: jest.fn() };
+const mockTransportsRepository = { findManyByTrip: jest.fn() };
 
 const mockTripAccess = {
   getTrip: jest.fn()
@@ -19,7 +29,9 @@ const mockItineraryRepository = {
   findManyByTrip: jest.fn(),
   findManyByTripAndDay: jest.fn(),
   update: jest.fn(),
-  delete: jest.fn()
+  delete: jest.fn(),
+  nextPosition: jest.fn(),
+  reorder: jest.fn()
 };
 
 const mockLogger = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
@@ -51,6 +63,7 @@ const makeItem = (overrides: Record<string, unknown> = {}) => ({
   locationUrl: null,
   startTime: "09:00",
   endTime: "11:00",
+  version: 1,
   createdAt: new Date("2026-10-01T00:00:00.000Z"),
   updatedAt: new Date("2026-10-01T00:00:00.000Z"),
   ...overrides
@@ -67,12 +80,99 @@ describe("ItineraryService", () => {
         ItineraryService,
         { provide: TripAccessService, useValue: mockTripAccess },
         { provide: ItineraryRepository, useValue: mockItineraryRepository },
+        {
+          provide: AccommodationsRepository,
+          useValue: mockAccommodationsRepository
+        },
+        { provide: TransportsRepository, useValue: mockTransportsRepository },
+        { provide: ActivityPublisher, useValue: mockActivity },
         { provide: WINSTON_MODULE_PROVIDER, useValue: mockLogger }
       ]
     }).compile();
 
     service = module.get<ItineraryService>(ItineraryService);
     mockTripAccess.getTrip.mockResolvedValue({ trip, role: "OWNER" });
+    mockItineraryRepository.nextPosition.mockResolvedValue(4);
+    mockAccommodationsRepository.findManyByTrip.mockResolvedValue([]);
+    mockTransportsRepository.findManyByTrip.mockResolvedValue([]);
+  });
+
+  describe("accommodations and transports per day", () => {
+    // trip days: 2026-11-30, 2026-12-01, 2026-12-02
+    const stay = (id: string, checkIn: string, checkOut: string) => ({
+      id,
+      tripId: "t1",
+      name: id,
+      ...toLocationColumns(null),
+      checkInDate: new Date(`${checkIn}T00:00:00.000Z`),
+      checkOutDate: new Date(`${checkOut}T00:00:00.000Z`),
+      bookingCode: null,
+      notes: null,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+
+    const move = (id: string, departure: string, arrival: string | null) => ({
+      id,
+      tripId: "t1",
+      type: "FLIGHT",
+      carrier: null,
+      number: null,
+      ...toLocationColumns({ name: "A" }, "origin"),
+      ...toLocationColumns({ name: "B" }, "destination"),
+      departureAt: new Date(`${departure}:00.000Z`),
+      arrivalAt: arrival ? new Date(`${arrival}:00.000Z`) : null,
+      bookingCode: null,
+      notes: null,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+
+    it("should place stays and transports on the right days", async () => {
+      mockItineraryRepository.findManyByTrip.mockResolvedValue([]);
+      mockAccommodationsRepository.findManyByTrip.mockResolvedValue([
+        stay("hotel-a", "2026-11-30", "2026-12-01"),
+        stay("hotel-b", "2026-12-01", "2026-12-03")
+      ]);
+      mockTransportsRepository.findManyByTrip.mockResolvedValue([
+        move("arrive", "2026-11-30T09:00", "2026-11-30T12:00"),
+        // overnight: departs day 2, arrives day 3
+        move("night-bus", "2026-12-01T22:00", "2026-12-02T06:00")
+      ]);
+
+      const { days } = await service.getItinerary("u1", "t1");
+
+      const summary = days.map((day) => [
+        day.date,
+        day.accommodations.map((a) => `${a.accommodation.name}:${a.event}`),
+        day.transports.map((t) => t.id)
+      ]);
+
+      expect(summary).toEqual([
+        ["2026-11-30", ["hotel-a:CHECK_IN"], ["arrive"]],
+        // check-out listed before check-in on a hotel change day
+        [
+          "2026-12-01",
+          ["hotel-a:CHECK_OUT", "hotel-b:CHECK_IN"],
+          ["night-bus"]
+        ],
+        ["2026-12-02", ["hotel-b:STAY"], ["night-bus"]]
+      ]);
+    });
+
+    it("should include stays and transports for a single day", async () => {
+      mockItineraryRepository.findManyByTripAndDay.mockResolvedValue([]);
+      mockAccommodationsRepository.findManyByTrip.mockResolvedValue([
+        stay("hotel-b", "2026-12-01", "2026-12-03")
+      ]);
+
+      const day = await service.getDay("u1", "t1", 3);
+
+      expect(day.accommodations).toEqual([
+        expect.objectContaining({ event: "STAY" })
+      ]);
+      expect(day.transports).toEqual([]);
+    });
   });
 
   it("should propagate NotFoundException when trip is not owned", async () => {
@@ -168,6 +268,7 @@ describe("ItineraryService", () => {
       expect(mockItineraryRepository.create).toHaveBeenCalledWith({
         tripId: "t1",
         dayNumber: 1,
+        position: 4,
         title: "Beach",
         description: null,
         locationName: null,
@@ -242,9 +343,19 @@ describe("ItineraryService", () => {
         dayNumber: 3
       });
 
-      expect(mockItineraryRepository.update).toHaveBeenCalledWith("i1", {
-        dayNumber: 3
-      });
+      // moved to the end of day 3
+      expect(mockItineraryRepository.nextPosition).toHaveBeenCalledWith(
+        "t1",
+        3
+      );
+      expect(mockItineraryRepository.update).toHaveBeenCalledWith(
+        "i1",
+        {
+          dayNumber: 3,
+          position: 4
+        },
+        undefined
+      );
       expect(result.dayNumber).toBe(3);
     });
 
@@ -265,14 +376,18 @@ describe("ItineraryService", () => {
         location: null
       });
 
-      expect(mockItineraryRepository.update).toHaveBeenCalledWith("i1", {
-        locationName: null,
-        locationAddress: null,
-        locationLatitude: null,
-        locationLongitude: null,
-        locationPlaceId: null,
-        locationUrl: null
-      });
+      expect(mockItineraryRepository.update).toHaveBeenCalledWith(
+        "i1",
+        {
+          locationName: null,
+          locationAddress: null,
+          locationLatitude: null,
+          locationLongitude: null,
+          locationPlaceId: null,
+          locationUrl: null
+        },
+        undefined
+      );
       expect(result.location).toBeNull();
     });
 
@@ -284,9 +399,13 @@ describe("ItineraryService", () => {
 
       await service.updateItem("u1", "t1", "i1", { startTime: null });
 
-      expect(mockItineraryRepository.update).toHaveBeenCalledWith("i1", {
-        startTime: null
-      });
+      expect(mockItineraryRepository.update).toHaveBeenCalledWith(
+        "i1",
+        {
+          startTime: null
+        },
+        undefined
+      );
     });
 
     it("should throw NotFoundException when item is not in trip", async () => {
@@ -298,7 +417,101 @@ describe("ItineraryService", () => {
     });
   });
 
+  describe("optimistic locking", () => {
+    it("should pass the expected version to the conditional update", async () => {
+      mockItineraryRepository.findByIdAndTrip.mockResolvedValue(makeItem());
+      mockItineraryRepository.update.mockResolvedValue(
+        makeItem({ title: "x", version: 2 })
+      );
+
+      const result = await service.updateItem(
+        "u1",
+        "t1",
+        "i1",
+        { title: "x" },
+        1
+      );
+
+      expect(mockItineraryRepository.update).toHaveBeenCalledWith(
+        "i1",
+        { title: "x" },
+        1
+      );
+      expect(result.version).toBe(2);
+    });
+
+    it("should reject an outdated version before writing", async () => {
+      mockItineraryRepository.findByIdAndTrip.mockResolvedValue(
+        makeItem({ version: 3 })
+      );
+
+      await expect(
+        service.updateItem("u1", "t1", "i1", { title: "x" }, 2)
+      ).rejects.toBeInstanceOf(PreconditionFailedException);
+      expect(mockItineraryRepository.update).not.toHaveBeenCalled();
+    });
+
+    it("should reject when someone else wrote in between", async () => {
+      mockItineraryRepository.findByIdAndTrip.mockResolvedValue(makeItem());
+      // version matched on read, but the conditional update matched no row
+      mockItineraryRepository.update.mockResolvedValue(null);
+
+      await expect(
+        service.updateItem("u1", "t1", "i1", { title: "x" }, 1)
+      ).rejects.toBeInstanceOf(PreconditionFailedException);
+    });
+
+    it("should not delete an item that changed since it was read", async () => {
+      mockItineraryRepository.findByIdAndTrip.mockResolvedValue(makeItem());
+      mockItineraryRepository.delete.mockResolvedValue(false);
+
+      await expect(
+        service.deleteItem("u1", "t1", "i1", 1)
+      ).rejects.toBeInstanceOf(PreconditionFailedException);
+      expect(mockActivity.publish).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("reorderDay", () => {
+    const A = "aaaaaaaa-0000-4000-8000-000000000001";
+    const B = "aaaaaaaa-0000-4000-8000-000000000002";
+
+    it("should save the new order of the day", async () => {
+      mockItineraryRepository.findManyByTripAndDay.mockResolvedValue([
+        makeItem({ id: A }),
+        makeItem({ id: B })
+      ]);
+
+      await service.reorderDay("u1", "t1", 1, { itemIds: [B, A] });
+
+      expect(mockTripAccess.getTrip).toHaveBeenCalledWith("u1", "t1", "EDITOR");
+      expect(mockItineraryRepository.reorder).toHaveBeenCalledWith("t1", [
+        B,
+        A
+      ]);
+    });
+
+    it.each([
+      ["missing an item", [A]],
+      ["containing an item of another day", [A, B, "other"]]
+    ])("should reject a list %s", async (_, itemIds) => {
+      mockItineraryRepository.findManyByTripAndDay.mockResolvedValue([
+        makeItem({ id: A }),
+        makeItem({ id: B })
+      ]);
+
+      await expect(
+        service.reorderDay("u1", "t1", 1, { itemIds })
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(mockItineraryRepository.reorder).not.toHaveBeenCalled();
+    });
+  });
+
   describe("deleteItem", () => {
+    beforeEach(() => {
+      mockItineraryRepository.delete.mockResolvedValue(true);
+    });
+
     it("should delete item of the trip", async () => {
       mockItineraryRepository.findByIdAndTrip.mockResolvedValue(makeItem());
 
@@ -308,7 +521,10 @@ describe("ItineraryService", () => {
         "i1",
         "t1"
       );
-      expect(mockItineraryRepository.delete).toHaveBeenCalledWith("i1");
+      expect(mockItineraryRepository.delete).toHaveBeenCalledWith(
+        "i1",
+        undefined
+      );
     });
 
     it("should throw NotFoundException when item is not in trip", async () => {

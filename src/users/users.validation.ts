@@ -12,3 +12,12 @@ export const UpdateProfileSchema = z
   });
 
 export type UpdateProfileDto = z.infer<typeof UpdateProfileSchema>;
+
+export const DeleteAccountSchema = z
+  .object({
+    // current password, to confirm it is really the account owner
+    password: z.string().min(1)
+  })
+  .strict();
+
+export type DeleteAccountDto = z.infer<typeof DeleteAccountSchema>;

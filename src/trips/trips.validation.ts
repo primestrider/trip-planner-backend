@@ -13,6 +13,13 @@ const TripFields = z.object({
 
   description: z.string().trim().max(5000).nullable().optional(),
 
+  // https image URL shown as the trip cover
+  coverImageUrl: z
+    .url({ protocol: /^https$/ })
+    .max(2048)
+    .nullable()
+    .optional(),
+
   // Date only, format YYYY-MM-DD
   startDate: z.iso.date(),
 
@@ -44,9 +51,35 @@ export const UpdateTripSchema = TripFields.partial()
 export const ListTripsQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
 
-  limit: z.coerce.number().int().min(1).max(100).default(20)
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+
+  // search in title and destination
+  q: z.string().trim().min(1).max(100).optional(),
+
+  // relative to `today`
+  status: z.enum(["upcoming", "ongoing", "past"]).optional(),
+
+  // owner: trips the user created; shared: trips the user collaborates on
+  role: z.enum(["owner", "shared"]).optional(),
+
+  // by start date
+  order: z.enum(["asc", "desc"]).default("desc"),
+
+  // client's local date (YYYY-MM-DD) for `status`; defaults to UTC today
+  today: z.iso.date().optional()
 });
+
+export const DuplicateTripSchema = z
+  .object({
+    // defaults to "<original title> (copy)"
+    title: z.string().trim().min(1).max(150).optional(),
+
+    // new start date; the trip keeps its length
+    startDate: z.iso.date().optional()
+  })
+  .strict();
 
 export type CreateTripDto = z.infer<typeof CreateTripSchema>;
 export type UpdateTripDto = z.infer<typeof UpdateTripSchema>;
 export type ListTripsQuery = z.infer<typeof ListTripsQuerySchema>;
+export type DuplicateTripDto = z.infer<typeof DuplicateTripSchema>;

@@ -102,4 +102,19 @@ export class InvitesRepository {
       return true;
     });
   }
+
+  /**
+   * Delete invites that expired or were revoked before `cutoff`.
+   *
+   * @returns number of deleted invites
+   */
+  async deleteInactiveBefore(cutoff: Date): Promise<number> {
+    const { count } = await this.prisma.tripInvite.deleteMany({
+      where: {
+        OR: [{ expiresAt: { lt: cutoff } }, { revokedAt: { lt: cutoff } }]
+      }
+    });
+
+    return count;
+  }
 }

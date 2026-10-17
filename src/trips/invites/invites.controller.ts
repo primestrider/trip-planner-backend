@@ -1,5 +1,4 @@
 import {
-  Body,
   Controller,
   Delete,
   Get,
@@ -10,10 +9,11 @@ import {
   Post,
   UseGuards
 } from "@nestjs/common";
+import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import { ZodBody } from "src/common/validation/zod.decorators";
 import { InvitesService } from "./invites.service";
 import { AccessTokenGuard } from "src/auth/guards/access-token.guard";
 import { CurrentUser } from "src/common/decorator/current-user.decorator";
-import { ValidationPipe } from "src/common/validation/validation.pipe";
 import { type CreateInviteDto, CreateInviteSchema } from "./invites.validation";
 import {
   type AcceptInviteResponse,
@@ -25,7 +25,9 @@ import {
 /**
  * Invite links managed by the trip owner
  */
+@ApiTags("invites")
 @Controller("trips/:tripId/invites")
+@ApiBearerAuth()
 @UseGuards(AccessTokenGuard)
 export class TripInvitesController {
   constructor(private readonly invitesService: InvitesService) {}
@@ -39,7 +41,7 @@ export class TripInvitesController {
   async create(
     @CurrentUser("sub") userId: string,
     @Param("tripId", ParseUUIDPipe) tripId: string,
-    @Body(ValidationPipe(CreateInviteSchema)) body: CreateInviteDto
+    @ZodBody(CreateInviteSchema) body: CreateInviteDto
   ): Promise<CreatedInviteResponse> {
     return this.invitesService.create(userId, tripId, body);
   }
@@ -73,7 +75,9 @@ export class TripInvitesController {
 /**
  * Invite links opened by the invited user
  */
+@ApiTags("invites")
 @Controller("invites")
+@ApiBearerAuth()
 @UseGuards(AccessTokenGuard)
 export class InvitesController {
   constructor(private readonly invitesService: InvitesService) {}

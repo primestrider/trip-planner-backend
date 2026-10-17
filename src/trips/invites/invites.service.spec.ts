@@ -6,6 +6,9 @@ import { InvitesService } from "./invites.service";
 import { InvitesRepository } from "./invites.repository";
 import { TripAccessService } from "../trip-access.service";
 import { TripsRepository } from "../trips.repository";
+import { ActivityPublisher } from "../activity/activity.events";
+
+const mockActivity = { publish: jest.fn() };
 
 const mockTripAccess = { getTrip: jest.fn() };
 const mockTripsRepository = { findByIdForUser: jest.fn() };
@@ -55,6 +58,7 @@ describe("InvitesService", () => {
         { provide: TripAccessService, useValue: mockTripAccess },
         { provide: TripsRepository, useValue: mockTripsRepository },
         { provide: InvitesRepository, useValue: mockInvitesRepository },
+        { provide: ActivityPublisher, useValue: mockActivity },
         { provide: WINSTON_MODULE_PROVIDER, useValue: mockLogger }
       ]
     }).compile();

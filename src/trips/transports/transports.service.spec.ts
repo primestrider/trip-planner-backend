@@ -6,6 +6,9 @@ import { TransportsRepository } from "./transports.repository";
 import { TripAccessService } from "../trip-access.service";
 import { toLocationColumns } from "../location";
 import { CreateTransportSchema } from "./transports.validation";
+import { ActivityPublisher } from "../activity/activity.events";
+
+const mockActivity = { publish: jest.fn() };
 
 const mockTripAccess = { getTrip: jest.fn() };
 
@@ -55,6 +58,7 @@ describe("TransportsService", () => {
         TransportsService,
         { provide: TripAccessService, useValue: mockTripAccess },
         { provide: TransportsRepository, useValue: mockRepository },
+        { provide: ActivityPublisher, useValue: mockActivity },
         { provide: WINSTON_MODULE_PROVIDER, useValue: mockLogger }
       ]
     }).compile();

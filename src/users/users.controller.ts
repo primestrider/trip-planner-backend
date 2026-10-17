@@ -1,12 +1,28 @@
-import { Body, Controller, Get, Patch, UseGuards } from "@nestjs/common";
+import {
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Patch,
+  UseGuards
+} from "@nestjs/common";
+import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import { ZodBody } from "src/common/validation/zod.decorators";
 import { UsersService } from "./users.service";
 import { AccessTokenGuard } from "src/auth/guards/access-token.guard";
 import { CurrentUser } from "src/common/decorator/current-user.decorator";
-import { ValidationPipe } from "src/common/validation/validation.pipe";
-import { type UpdateProfileDto, UpdateProfileSchema } from "./users.validation";
+import {
+  type DeleteAccountDto,
+  type UpdateProfileDto,
+  DeleteAccountSchema,
+  UpdateProfileSchema
+} from "./users.validation";
 import { type AvatarResponse, type UserProfileResponse } from "./models";
 
+@ApiTags("users")
 @Controller("users")
+@ApiBearerAuth()
 @UseGuards(AccessTokenGuard)
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
@@ -29,7 +45,7 @@ export class UsersController {
   @Patch("profile")
   async updateProfile(
     @CurrentUser("sub") userId: string,
-    @Body(ValidationPipe(UpdateProfileSchema)) body: UpdateProfileDto
+    @ZodBody(UpdateProfileSchema) body: UpdateProfileDto
   ): Promise<UserProfileResponse> {
     return this.usersService.updateProfile(userId, body);
   }
@@ -41,5 +57,19 @@ export class UsersController {
   @Get("avatars")
   async getAvatars(): Promise<AvatarResponse[]> {
     return this.usersService.getAvatars();
+  }
+
+  /**
+   * Delete the authenticated user's account (password required)
+   *  DELETE /users/profile
+   */
+  @Delete("profile")
+  @HttpCode(HttpStatus.OK)
+  async deleteAccount(
+    @CurrentUser("sub") userId: string,
+    @ZodBody(DeleteAccountSchema) body: DeleteAccountDto
+  ): Promise<null> {
+    await this.usersService.deleteAccount(userId, body.password);
+    return null;
   }
 }

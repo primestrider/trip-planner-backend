@@ -25,6 +25,20 @@ import {
 } from "./invites/invites.controller";
 import { InvitesService } from "./invites/invites.service";
 import { InvitesRepository } from "./invites/invites.repository";
+import { InvitesTasks } from "./invites/invites.tasks";
+import { ChecklistController } from "./checklist/checklist.controller";
+import { ChecklistService } from "./checklist/checklist.service";
+import { ChecklistRepository } from "./checklist/checklist.repository";
+import {
+  SharedTripController,
+  TripShareController
+} from "./share/share.controller";
+import { ShareService } from "./share/share.service";
+import { ActivityController } from "./activity/activity.controller";
+import { ActivityPublisher } from "./activity/activity.events";
+import { ActivityListener } from "./activity/activity.listener";
+import { ActivityRepository } from "./activity/activity.repository";
+import { ActivityService } from "./activity/activity.service";
 
 @Module({
   imports: [UsersModule],
@@ -36,7 +50,11 @@ import { InvitesRepository } from "./invites/invites.repository";
     TransportsController,
     ExpensesController,
     TripInvitesController,
-    InvitesController
+    InvitesController,
+    ChecklistController,
+    TripShareController,
+    SharedTripController,
+    ActivityController
   ],
   providers: [
     TripsService,
@@ -53,7 +71,15 @@ import { InvitesRepository } from "./invites/invites.repository";
     ExpensesService,
     ExpensesRepository,
     InvitesService,
-    InvitesRepository
+    InvitesRepository,
+    InvitesTasks,
+    ChecklistService,
+    ChecklistRepository,
+    ShareService,
+    ActivityPublisher,
+    ActivityRepository,
+    ActivityListener,
+    ActivityService
   ]
 })
 export class TripsModule {}

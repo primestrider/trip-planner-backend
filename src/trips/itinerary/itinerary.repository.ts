@@ -3,11 +3,13 @@ import { ItineraryItem, Prisma } from "@prisma/client";
 import { PrismaService } from "src/common/prisma.service";
 
 /**
- * Items of a day: timed items by start time, untimed items last,
- * ties by creation order.
+ * Items of a day: timed items by start time, untimed items last.
+ * Untimed items and equal start times follow the manual position,
+ * then creation order.
  */
 const itemOrder: Prisma.ItineraryItemOrderByWithRelationInput[] = [
   { startTime: { sort: "asc", nulls: "last" } },
+  { position: "asc" },
   { createdAt: "asc" }
 ];
 
@@ -76,19 +78,75 @@ export class ItineraryRepository {
     return result._max.dayNumber;
   }
 
+  /**
+   * Update an item and bump its version.
+   *
+   * With `expectedVersion` the row is only changed if its version still
+   * matches (optimistic locking): the check and the write are one
+   * UPDATE ... WHERE id = ? AND version = ?, so two editors can never both
+   * win with stale data.
+   *
+   * @returns the updated item, or `null` if the version no longer matches
+   */
   async update(
     itemId: string,
-    data: Prisma.ItineraryItemUpdateInput
-  ): Promise<ItineraryItem> {
-    return this.prisma.itineraryItem.update({
-      where: { id: itemId },
-      data
+    data: Prisma.ItineraryItemUncheckedUpdateManyInput,
+    expectedVersion?: number
+  ): Promise<ItineraryItem | null> {
+    const { count } = await this.prisma.itineraryItem.updateMany({
+      where: {
+        id: itemId,
+        ...(expectedVersion !== undefined && { version: expectedVersion })
+      },
+      data: { ...data, version: { increment: 1 } }
     });
+
+    if (count === 0) {
+      return null;
+    }
+
+    return this.prisma.itineraryItem.findUnique({ where: { id: itemId } });
   }
 
-  async delete(itemId: string): Promise<void> {
-    await this.prisma.itineraryItem.delete({
-      where: { id: itemId }
+  /**
+   * Delete an item; with `expectedVersion` only if it still has that version.
+   *
+   * @returns `false` if the version no longer matches
+   */
+  async delete(itemId: string, expectedVersion?: number): Promise<boolean> {
+    const { count } = await this.prisma.itineraryItem.deleteMany({
+      where: {
+        id: itemId,
+        ...(expectedVersion !== undefined && { version: expectedVersion })
+      }
     });
+
+    return count > 0;
+  }
+
+  /**
+   * Position right after the last item of a day
+   */
+  async nextPosition(tripId: string, dayNumber: number): Promise<number> {
+    const result = await this.prisma.itineraryItem.aggregate({
+      where: { tripId, dayNumber },
+      _max: { position: true }
+    });
+
+    return (result._max.position ?? -1) + 1;
+  }
+
+  /**
+   * Set the manual order of a day's items to the order of `itemIds`.
+   */
+  async reorder(tripId: string, itemIds: string[]): Promise<void> {
+    await this.prisma.$transaction(
+      itemIds.map((id, position) =>
+        this.prisma.itineraryItem.updateMany({
+          where: { id, tripId },
+          data: { position }
+        })
+      )
+    );
   }
 }
