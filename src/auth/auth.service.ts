@@ -9,6 +9,8 @@ import {
 import { WINSTON_MODULE_PROVIDER } from "nest-winston";
 import { Logger } from "winston";
 import * as bcrypt from "bcrypt";
+import { randomUUID } from "crypto";
+import { hashRefreshToken, refreshTokenMatches } from "./token-hash";
 import { UsersService } from "../users/users.service";
 import { JwtService, JwtSignOptions } from "@nestjs/jwt";
 import { ConfigService } from "@nestjs/config";
@@ -86,6 +88,11 @@ export class AuthService {
   /**
    * Sign a JWT using the given payload and signing options.
    *
+   * Every token gets a random `jti`, so two tokens issued for the same
+   * user in the same second are still different. Without it a rotated
+   * refresh token could be byte-for-byte equal to the one it replaces,
+   * and the old token would keep working.
+   *
    * @param payload Data to be embedded inside the JWT
    * @param options JWT signing options (secret, expiration, etc.)
    * @returns Signed JWT string
@@ -94,7 +101,10 @@ export class AuthService {
     payload: T,
     options: JwtSignOptions
   ): Promise<string> {
-    return await this.jwtService.signAsync(payload, options);
+    return await this.jwtService.signAsync(payload, {
+      ...options,
+      jwtid: randomUUID()
+    });
   }
 
   /**
@@ -160,7 +170,7 @@ export class AuthService {
     await this.authRepository.create({
       userId: user.id,
       deviceId,
-      tokenHash: await bcrypt.hash(refreshToken, 10),
+      tokenHash: hashRefreshToken(refreshToken),
       expiresAt
     });
 
@@ -298,8 +308,9 @@ export class AuthService {
       throw new UnauthorizedException("Refresh token expired");
     }
 
-    // compare provided refreshToken with hased token from db
-    const isTokenValid = await bcrypt.compare(
+    // a mismatch also means an old (rotated) token was reused:
+    // the session is revoked below, so a stolen copy stops working too
+    const isTokenValid = refreshTokenMatches(
       refreshToken,
       tokenRecord.tokenHash
     );
@@ -331,7 +342,7 @@ export class AuthService {
 
     await this.authRepository.updateRefreshToken(
       tokenRecord.id,
-      await bcrypt.hash(newRefreshToken, 10),
+      hashRefreshToken(newRefreshToken),
       expiresAt
     );
 
