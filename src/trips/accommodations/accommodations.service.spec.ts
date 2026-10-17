@@ -10,6 +10,9 @@ import { AccommodationsRepository } from "./accommodations.repository";
 import { TripAccessService } from "../trip-access.service";
 import { toLocationColumns } from "../location";
 import { CreateAccommodationSchema } from "./accommodations.validation";
+import { ActivityPublisher } from "../activity/activity.events";
+
+const mockActivity = { publish: jest.fn() };
 
 const mockTripAccess = { getTrip: jest.fn() };
 
@@ -50,6 +53,7 @@ describe("AccommodationsService", () => {
         AccommodationsService,
         { provide: TripAccessService, useValue: mockTripAccess },
         { provide: AccommodationsRepository, useValue: mockRepository },
+        { provide: ActivityPublisher, useValue: mockActivity },
         { provide: WINSTON_MODULE_PROVIDER, useValue: mockLogger }
       ]
     }).compile();

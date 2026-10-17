@@ -16,6 +16,7 @@ import {
   UpdateAccommodationDto
 } from "./accommodations.validation";
 import { countDaysInclusive, toDate, toDateString } from "src/utils/date";
+import { ActivityPublisher } from "../activity/activity.events";
 
 /**
  * Map a stored accommodation to its API response
@@ -50,6 +51,7 @@ export class AccommodationsService {
   constructor(
     private readonly tripAccess: TripAccessService,
     private readonly accommodationsRepository: AccommodationsRepository,
+    private readonly activity: ActivityPublisher,
     @Inject(WINSTON_MODULE_PROVIDER)
     private readonly logger: Logger
   ) {}
@@ -116,6 +118,17 @@ export class AccommodationsService {
       userId,
       tripId,
       accommodationId: accommodation.id
+    });
+
+    this.activity.publish({
+      tripId: trip.id,
+      actorUserId: userId,
+      action: "accommodation.added",
+      data: {
+        name: accommodation.name,
+        checkInDate: payload.checkInDate,
+        checkOutDate: payload.checkOutDate
+      }
     });
 
     return toAccommodationResponse(accommodation);

@@ -31,6 +31,7 @@ import { AccommodationsRepository } from "../accommodations/accommodations.repos
 import { toAccommodationResponse } from "../accommodations/accommodations.service";
 import { TransportsRepository } from "../transports/transports.repository";
 import { toTransportResponse } from "../transports/transports.service";
+import { ActivityPublisher } from "../activity/activity.events";
 
 const EVENT_ORDER: Record<AccommodationEvent, number> = {
   CHECK_OUT: 0,
@@ -51,6 +52,7 @@ export class ItineraryService {
     private readonly itineraryRepository: ItineraryRepository,
     private readonly accommodationsRepository: AccommodationsRepository,
     private readonly transportsRepository: TransportsRepository,
+    private readonly activity: ActivityPublisher,
     @Inject(WINSTON_MODULE_PROVIDER)
     private readonly logger: Logger
   ) {}
@@ -250,6 +252,13 @@ export class ItineraryService {
       itemId: item.id
     });
 
+    this.activity.publish({
+      tripId: trip.id,
+      actorUserId: userId,
+      action: "itinerary.item_added",
+      data: { itemId: item.id, dayNumber: item.dayNumber, title: item.title }
+    });
+
     return this.toItemResponse(item);
   }
 
@@ -320,6 +329,13 @@ export class ItineraryService {
     await this.itineraryRepository.delete(item.id);
 
     this.logger.info("Itinerary item deleted", { userId, tripId, itemId });
+
+    this.activity.publish({
+      tripId: trip.id,
+      actorUserId: userId,
+      action: "itinerary.item_deleted",
+      data: { dayNumber: item.dayNumber, title: item.title }
+    });
   }
 
   /**

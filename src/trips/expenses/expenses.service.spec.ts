@@ -11,6 +11,9 @@ import { ExpensesRepository } from "./expenses.repository";
 import { MembersRepository } from "../members/members.repository";
 import { TripAccessService } from "../trip-access.service";
 import { CreateExpenseSchema } from "./expenses.validation";
+import { ActivityPublisher } from "../activity/activity.events";
+
+const mockActivity = { publish: jest.fn() };
 
 const mockTripAccess = { getTrip: jest.fn() };
 
@@ -76,6 +79,7 @@ describe("ExpensesService", () => {
         { provide: TripAccessService, useValue: mockTripAccess },
         { provide: ExpensesRepository, useValue: mockExpensesRepository },
         { provide: MembersRepository, useValue: mockMembersRepository },
+        { provide: ActivityPublisher, useValue: mockActivity },
         { provide: WINSTON_MODULE_PROVIDER, useValue: mockLogger }
       ]
     }).compile();
@@ -118,6 +122,17 @@ describe("ExpensesService", () => {
         paidBy: { userId: "owner", username: "john" },
         splits: [{ user: { userId: "owner" }, amount: 150000.5 }]
       });
+      expect(mockActivity.publish).toHaveBeenCalledWith({
+        tripId: "t1",
+        actorUserId: "owner",
+        action: "expense.added",
+        data: {
+          expenseId: "e1",
+          title: "Dinner",
+          amount: 150000.5,
+          category: "FOOD"
+        }
+      });
     });
 
     it("should split among chosen members with leftover cents", async () => {
@@ -153,6 +168,7 @@ describe("ExpensesService", () => {
         })
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(mockExpensesRepository.create).not.toHaveBeenCalled();
+      expect(mockActivity.publish).not.toHaveBeenCalled();
     });
 
     it("should not record expense when user is only a viewer", async () => {

@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { APP_GUARD } from "@nestjs/core";
 import { ScheduleModule } from "@nestjs/schedule";
+import { EventEmitterModule } from "@nestjs/event-emitter";
 import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 import { AppController } from "./app.controller";
 import { AppService } from "./app.service";
@@ -19,6 +20,8 @@ import { HealthModule } from "./health/health.module";
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
     // runs @Cron jobs (token and invite cleanup)
     ScheduleModule.forRoot(),
+    // in-process domain events (trip activity feed)
+    EventEmitterModule.forRoot(),
     UsersModule,
     AuthModule,
     CommonModule,

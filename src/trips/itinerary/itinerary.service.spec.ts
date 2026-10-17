@@ -11,6 +11,9 @@ import { TripAccessService } from "../trip-access.service";
 import { AccommodationsRepository } from "../accommodations/accommodations.repository";
 import { TransportsRepository } from "../transports/transports.repository";
 import { toLocationColumns } from "../location";
+import { ActivityPublisher } from "../activity/activity.events";
+
+const mockActivity = { publish: jest.fn() };
 
 const mockAccommodationsRepository = { findManyByTrip: jest.fn() };
 const mockTransportsRepository = { findManyByTrip: jest.fn() };
@@ -80,6 +83,7 @@ describe("ItineraryService", () => {
           useValue: mockAccommodationsRepository
         },
         { provide: TransportsRepository, useValue: mockTransportsRepository },
+        { provide: ActivityPublisher, useValue: mockActivity },
         { provide: WINSTON_MODULE_PROVIDER, useValue: mockLogger }
       ]
     }).compile();

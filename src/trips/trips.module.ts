@@ -34,6 +34,11 @@ import {
   TripShareController
 } from "./share/share.controller";
 import { ShareService } from "./share/share.service";
+import { ActivityController } from "./activity/activity.controller";
+import { ActivityPublisher } from "./activity/activity.events";
+import { ActivityListener } from "./activity/activity.listener";
+import { ActivityRepository } from "./activity/activity.repository";
+import { ActivityService } from "./activity/activity.service";
 
 @Module({
   imports: [UsersModule],
@@ -48,7 +53,8 @@ import { ShareService } from "./share/share.service";
     InvitesController,
     ChecklistController,
     TripShareController,
-    SharedTripController
+    SharedTripController,
+    ActivityController
   ],
   providers: [
     TripsService,
@@ -69,7 +75,11 @@ import { ShareService } from "./share/share.service";
     InvitesTasks,
     ChecklistService,
     ChecklistRepository,
-    ShareService
+    ShareService,
+    ActivityPublisher,
+    ActivityRepository,
+    ActivityListener,
+    ActivityService
   ]
 })
 export class TripsModule {}

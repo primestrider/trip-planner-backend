@@ -23,6 +23,7 @@ import {
   ListChecklistQuery,
   UpdateChecklistItemDto
 } from "./checklist.validation";
+import { ActivityPublisher } from "../activity/activity.events";
 
 function toChecklistUser(
   user: { id: string; username: string; name: string | null } | null
@@ -42,6 +43,7 @@ export class ChecklistService {
     private readonly tripAccess: TripAccessService,
     private readonly checklistRepository: ChecklistRepository,
     private readonly membersRepository: MembersRepository,
+    private readonly activity: ActivityPublisher,
     @Inject(WINSTON_MODULE_PROVIDER)
     private readonly logger: Logger
   ) {}
@@ -170,6 +172,17 @@ export class ChecklistService {
     });
 
     this.logger.info("Checklist item updated", { userId, tripId, itemId });
+
+    if (checkChanged) {
+      this.activity.publish({
+        tripId: trip.id,
+        actorUserId: userId,
+        action: payload.isChecked
+          ? "checklist.item_checked"
+          : "checklist.item_unchecked",
+        data: { title: updated.title }
+      });
+    }
 
     return this.toResponse(updated);
   }

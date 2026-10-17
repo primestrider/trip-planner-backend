@@ -29,6 +29,7 @@ import {
   UpdateExpenseDto
 } from "./expenses.validation";
 import { toDate, toDateString } from "src/utils/date";
+import { ActivityPublisher } from "../activity/activity.events";
 
 function toExpenseUser(user: {
   id: string;
@@ -49,6 +50,7 @@ export class ExpensesService {
     private readonly tripAccess: TripAccessService,
     private readonly expensesRepository: ExpensesRepository,
     private readonly membersRepository: MembersRepository,
+    private readonly activity: ActivityPublisher,
     @Inject(WINSTON_MODULE_PROVIDER)
     private readonly logger: Logger
   ) {}
@@ -187,6 +189,18 @@ export class ExpensesService {
       expenseId: expense.id
     });
 
+    this.activity.publish({
+      tripId: trip.id,
+      actorUserId: userId,
+      action: "expense.added",
+      data: {
+        expenseId: expense.id,
+        title: payload.title,
+        amount: payload.amount,
+        category: payload.category
+      }
+    });
+
     return this.toResponse(expense);
   }
 
@@ -268,6 +282,13 @@ export class ExpensesService {
     await this.expensesRepository.delete(expense.id);
 
     this.logger.info("Expense deleted", { userId, tripId, expenseId });
+
+    this.activity.publish({
+      tripId: trip.id,
+      actorUserId: userId,
+      action: "expense.deleted",
+      data: { title: expense.title, amount: toAmount(expense.amount) }
+    });
   }
 
   /**

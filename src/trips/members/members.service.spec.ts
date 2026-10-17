@@ -10,6 +10,9 @@ import { MembersService } from "./members.service";
 import { MembersRepository } from "./members.repository";
 import { TripAccessService } from "../trip-access.service";
 import { UsersService } from "src/users/users.service";
+import { ActivityPublisher } from "../activity/activity.events";
+
+const mockActivity = { publish: jest.fn() };
 
 const mockTripAccess = { getTrip: jest.fn() };
 
@@ -59,6 +62,7 @@ describe("MembersService", () => {
         { provide: TripAccessService, useValue: mockTripAccess },
         { provide: MembersRepository, useValue: mockMembersRepository },
         { provide: UsersService, useValue: mockUsersService },
+        { provide: ActivityPublisher, useValue: mockActivity },
         { provide: WINSTON_MODULE_PROVIDER, useValue: mockLogger }
       ]
     }).compile();
@@ -194,6 +198,9 @@ describe("MembersService", () => {
       await service.remove("owner", "t1", "u2");
 
       expect(mockMembersRepository.delete).toHaveBeenCalledWith("m-u2");
+      expect(mockActivity.publish).toHaveBeenCalledWith(
+        expect.objectContaining({ action: "member.removed" })
+      );
     });
 
     it("should let a member leave the trip", async () => {
@@ -205,6 +212,12 @@ describe("MembersService", () => {
       await service.remove("u2", "t1", "u2");
 
       expect(mockMembersRepository.delete).toHaveBeenCalledWith("m-u2");
+      expect(mockActivity.publish).toHaveBeenCalledWith({
+        tripId: "t1",
+        actorUserId: "u2",
+        action: "member.left",
+        data: { userId: "u2" }
+      });
     });
 
     it("should forbid a member removing someone else", async () => {

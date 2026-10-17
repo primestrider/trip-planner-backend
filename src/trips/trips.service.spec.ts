@@ -11,6 +11,9 @@ import { TripsRepository } from "./trips.repository";
 import { ItineraryRepository } from "./itinerary/itinerary.repository";
 import { ChecklistRepository } from "./checklist/checklist.repository";
 import { TripAccessService } from "./trip-access.service";
+import { ActivityPublisher } from "./activity/activity.events";
+
+const mockActivity = { publish: jest.fn() };
 
 const mockItineraryRepository = {
   findMaxDayNumber: jest.fn(),
@@ -84,6 +87,7 @@ describe("TripsService", () => {
         { provide: TripsRepository, useValue: mockTripsRepository },
         { provide: ItineraryRepository, useValue: mockItineraryRepository },
         { provide: ChecklistRepository, useValue: mockChecklistRepository },
+        { provide: ActivityPublisher, useValue: mockActivity },
         { provide: WINSTON_MODULE_PROVIDER, useValue: mockLogger }
       ]
     }).compile();

@@ -20,6 +20,7 @@ import {
 } from "./models";
 import { CreateInviteDto } from "./invites.validation";
 import { addDays, toDateString } from "src/utils/date";
+import { ActivityPublisher } from "../activity/activity.events";
 
 // 32 random bytes encoded as base64url
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
@@ -59,6 +60,7 @@ export class InvitesService {
     private readonly tripAccess: TripAccessService,
     private readonly tripsRepository: TripsRepository,
     private readonly invitesRepository: InvitesRepository,
+    private readonly activity: ActivityPublisher,
     @Inject(WINSTON_MODULE_PROVIDER)
     private readonly logger: Logger
   ) {}
@@ -232,6 +234,13 @@ export class InvitesService {
       userId,
       tripId: invite.tripId,
       inviteId: invite.id
+    });
+
+    this.activity.publish({
+      tripId: invite.tripId,
+      actorUserId: userId,
+      action: "member.joined_via_invite",
+      data: { role: invite.role }
     });
 
     return { tripId: invite.tripId, role: invite.role, alreadyMember: false };

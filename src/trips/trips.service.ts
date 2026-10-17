@@ -25,6 +25,7 @@ import {
   toDateString
 } from "src/utils/date";
 import { toAmount } from "./money";
+import { ActivityPublisher } from "./activity/activity.events";
 
 /**
  * TripsService contains business logic for managing trips
@@ -37,6 +38,7 @@ export class TripsService {
     private readonly tripAccess: TripAccessService,
     private readonly itineraryRepository: ItineraryRepository,
     private readonly checklistRepository: ChecklistRepository,
+    private readonly activity: ActivityPublisher,
     @Inject(WINSTON_MODULE_PROVIDER)
     private readonly logger: Logger
   ) {}
@@ -169,6 +171,13 @@ export class TripsService {
     });
 
     this.logger.info("Trip updated", { userId, tripId });
+
+    this.activity.publish({
+      tripId: trip.id,
+      actorUserId: userId,
+      action: "trip.updated",
+      data: { fields: Object.keys(payload) }
+    });
 
     return this.toResponse(updated, role);
   }

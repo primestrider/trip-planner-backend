@@ -9,6 +9,9 @@ import { ChecklistService } from "./checklist.service";
 import { ChecklistRepository } from "./checklist.repository";
 import { MembersRepository } from "../members/members.repository";
 import { TripAccessService } from "../trip-access.service";
+import { ActivityPublisher } from "../activity/activity.events";
+
+const mockActivity = { publish: jest.fn() };
 
 const mockTripAccess = { getTrip: jest.fn() };
 const mockChecklistRepository = {
@@ -53,6 +56,7 @@ describe("ChecklistService", () => {
         { provide: TripAccessService, useValue: mockTripAccess },
         { provide: ChecklistRepository, useValue: mockChecklistRepository },
         { provide: MembersRepository, useValue: mockMembersRepository },
+        { provide: ActivityPublisher, useValue: mockActivity },
         { provide: WINSTON_MODULE_PROVIDER, useValue: mockLogger }
       ]
     }).compile();
@@ -163,6 +167,7 @@ describe("ChecklistService", () => {
       await service.update("owner", "t1", "c1", { isChecked: true });
 
       expect(mockChecklistRepository.update).toHaveBeenCalledWith("c1", {});
+      expect(mockActivity.publish).not.toHaveBeenCalled();
     });
   });
 

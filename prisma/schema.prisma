@@ -37,6 +37,7 @@ model User {
   expenseShares          TripExpenseShare[]
   assignedChecklistItems TripChecklistItem[] @relation("ChecklistAssignee")
   checkedChecklistItems  TripChecklistItem[] @relation("ChecklistCheckedBy")
+  activities             TripActivity[]      @relation("ActivityActor")
 
   createdAt DateTime  @default(now()) @db.Timestamp(0)
   updatedAt DateTime  @updatedAt @db.Timestamp(0)
@@ -109,6 +110,7 @@ model Trip {
   expenses       TripExpense[]
   invites        TripInvite[]
   checklistItems TripChecklistItem[]
+  activities     TripActivity[]
 
   createdAt DateTime @default(now()) @db.Timestamp(0)
   updatedAt DateTime @updatedAt @db.Timestamp(0)
@@ -357,4 +359,27 @@ model TripChecklistItem {
   @@index([assignedToUserId])
   @@index([checkedByUserId])
   @@map("trip_checklist_items")
+}
+
+// Activity feed entry of a trip (written by the activity event listener)
+model TripActivity {
+  id String @id @default(uuid())
+
+  tripId String
+  trip   Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  // who did it; kept as null if that user is deleted
+  actorUserId String?
+  actor       User?   @relation("ActivityActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  // e.g. "expense.added", "member.joined_via_invite"
+  action String @db.VarChar(50)
+  data   Json?
+
+  // millisecond precision keeps the feed order stable
+  createdAt DateTime @default(now()) @db.Timestamp(3)
+
+  @@index([tripId, createdAt, id])
+  @@index([actorUserId])
+  @@map("trip_activities")
 }

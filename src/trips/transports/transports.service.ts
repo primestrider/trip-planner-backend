@@ -11,6 +11,7 @@ import {
   UpdateTransportDto
 } from "./transports.validation";
 import { toLocalDateTime, toLocalDateTimeString } from "src/utils/date";
+import { ActivityPublisher } from "../activity/activity.events";
 
 /**
  * Map a stored transport to its API response
@@ -46,6 +47,7 @@ export class TransportsService {
   constructor(
     private readonly tripAccess: TripAccessService,
     private readonly transportsRepository: TransportsRepository,
+    private readonly activity: ActivityPublisher,
     @Inject(WINSTON_MODULE_PROVIDER)
     private readonly logger: Logger
   ) {}
@@ -109,6 +111,13 @@ export class TransportsService {
       userId,
       tripId,
       transportId: transport.id
+    });
+
+    this.activity.publish({
+      tripId: trip.id,
+      actorUserId: userId,
+      action: "transport.added",
+      data: { type: payload.type, departureAt: payload.departureAt }
     });
 
     return toTransportResponse(transport);
